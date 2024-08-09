@@ -1,1 +1,1 @@
-#FastAPI implementation of Backpackk backend
+FastAPI implementation of Backpackk backend
