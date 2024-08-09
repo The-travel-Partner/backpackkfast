@@ -12,8 +12,8 @@ import sys
 
 class TripCreator:
     def __init__(self, city_name, place_types, no_of_days):
-        self.city_name = city_name,
-        self.place_types = place_types,
+        self.city_name = city_name
+        self.place_types = place_types
         self.no_of_days = no_of_days
 
     async def create_trip(self):
@@ -21,7 +21,8 @@ class TripCreator:
         genai.configure(api_key='AIzaSyDqWSMHmOR-4kmyc8GWH9IGjrgHHsh2dJ8')
         print(self.city_name)
         print(self.no_of_days)
-        geocode_result = gmaps.geocode(self.city_name[0])
+        geocode_result = gmaps.geocode(self.city_name)
+
         print(geocode_result[0]['geometry']['location'].keys())
 
         bounds = geocode_result[0]['geometry']['bounds']
@@ -37,7 +38,7 @@ class TripCreator:
         print('Northeast coordinates:', northeast)
         print('Southwest coordinates:', southwest)
 
-        places = place(placetypes=self.place_types[0], northeast=northeast, southwest=southwest)
+        places = place(placetypes=self.place_types, northeast=northeast, southwest=southwest)
         result = await places.getAll()
 
         prompt = result['tourist_attraction']
@@ -176,17 +177,19 @@ class TripCreator:
         df_sorted = df_sorted.drop_duplicates(subset='Name', keep='first', inplace=False)
         df_sorted.to_csv('bigdata.csv')
 
+        gmaps = googlemaps.Client(key='AIzaSyCzTbejaiLzlYUzDI8ZReYNgEF9UaS-X1E')
+
         def compute_distance_matrix(data):
             df_dist_matrix = pd.DataFrame(index=data.index, columns=data.index)
 
-            chunk_size = 25
+            chunk_size = 10
             for i in range(0, len(data), chunk_size):
                 origins = [(loc['lat'], loc['lng']) for _, loc in data.iloc[i:i + chunk_size].iterrows()]
                 for j in range(0, len(data), chunk_size):
                     destinations = [(loc['lat'], loc['lng']) for _, loc in data.iloc[j:j + chunk_size].iterrows()]
 
                     try:
-                        result = distance_matrix(gmaps, origins, destinations)
+                        result = distance_matrix(gmaps, origins, destinations, mode='driving')
                         for k, row in enumerate(result['rows']):
                             for l, element in enumerate(row['elements']):
                                 df_dist_matrix.at[i + k, j + l] = element['distance']['value']
