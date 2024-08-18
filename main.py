@@ -97,24 +97,24 @@ def send_verification_email(user_email, token, user_id):
 
 
 
-class UserRegistration(BaseModel):
-    email: EmailStr
-    password: str
+
 
 @app.post("/register/")
-async def register_user(user: UserRegistration, background_tasks: BackgroundTasks):
+async def register_user(user: auth.UserCreate, background_tasks: BackgroundTasks):
     existing_user = await users_collection.find_one({"email": user.email})
     if existing_user:
         raise HTTPException(status_code=400, detail="User already exists.")
-
+    
     token = generate_verification_token()
-    user_data = {
-        "email": user.email,
-        "password": user.password,
-        "verified": False,
-        "verification_token": token
-    }
-    new_user = await users_collection.insert_one(user_data)
+    hashed_password = auth.get_password_hash(user.password)
+    user_dict= user.model_dump()
+    user_dict["hashed_password"] = hashed_password
+    del user_dict["password"]
+    user_dict["disabled"] = False
+    user_dict["verified"] = False
+    user_dict["verification_token"] = token
+
+    new_user = await users_collection.insert_one(user_dict)
     user_id = str(new_user.inserted_id)
 
     background_tasks.add_task(send_verification_email, user.email, token, user_id)
