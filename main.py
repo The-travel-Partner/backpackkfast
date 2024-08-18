@@ -51,21 +51,84 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
     return {"access_token": access_token, "token_type": "bearer"}
 
 
-@app.post("/register", response_model=auth.User)
-async def register_user(user: auth.UserCreate):
-    existing_user = await auth.get_user_by_email(user.email)
+from motor.motor_asyncio import AsyncIOMotorClient
+from fastapi import FastAPI, HTTPException, BackgroundTasks
+from pydantic import BaseModel, EmailStr
+import random
+import string
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from bson.objectid import ObjectId
+
+app = FastAPI()
+mongostr = "mongodb+srv://admin:C5Qt4vWNogmRSlVi@backpackk.tmkdask.mongodb.net/"
+client = AsyncIOMotorClient(mongostr)
+db = client['backpackk']
+users_collection = db['users']
+
+def generate_verification_token(length=6):
+    return ''.join(random.choices(string.ascii_letters + string.digits, k=length))
+
+def send_verification_email(user_email, token, user_id):
+    sender_email = "nimishspslosal@gmail.com"
+    sender_password = "axmdvfpmiewtzmsd"
+    receiver_email = user_email
+
+    subject = "Email Verification"
+    body = f"Please verify your email by clicking on the following link: http://localhost:8000/verify/{user_id}/{token}"
+
+    message = MIMEMultipart()
+    message["From"] = sender_email
+    message["To"] = receiver_email
+    message["Subject"] = subject
+
+    message.attach(MIMEText(body, "plain"))
+
+    try:
+        server = smtplib.SMTP("smtp.gmail.com", 587)
+        server.starttls()
+        server.login(sender_email, sender_password)
+        server.sendmail(sender_email, receiver_email, message.as_string())
+        server.quit()
+        print("Verification email sent successfully!")
+    except Exception as e:
+        print(f"Failed to send email: {str(e)}")
+
+
+
+class UserRegistration(BaseModel):
+    email: EmailStr
+    password: str
+
+@app.post("/register/")
+async def register_user(user: UserRegistration, background_tasks: BackgroundTasks):
+    existing_user = await users_collection.find_one({"email": user.email})
     if existing_user:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email already registered",
-        )
-    hashed_password = auth.get_password_hash(user.password)
-    user_dict = user.model_dump()
-    user_dict["hashed_password"] = hashed_password
-    del user_dict["password"]
-    user_dict["disabled"] = False
-    await usercollection.insert_one(user_dict)
-    return auth.User(email=user.email, first_name=user.first_name, last_name=user.last_name)
+        raise HTTPException(status_code=400, detail="User already exists.")
+
+    token = generate_verification_token()
+    user_data = {
+        "email": user.email,
+        "password": user.password,
+        "verified": False,
+        "verification_token": token
+    }
+    new_user = await users_collection.insert_one(user_data)
+    user_id = str(new_user.inserted_id)
+
+    background_tasks.add_task(send_verification_email, user.email, token, user_id)
+
+    return {"message": "User registered successfully. Please check your email to verify your account."}
+
+@app.get("/verify/{user_id}/{token}")
+async def verify_user(user_id: str, token: str):
+    user = await users_collection.find_one({"_id": ObjectId(user_id), "verification_token": token})
+    if user:
+        await users_collection.update_one({"_id": ObjectId(user_id)}, {"$set": {"verified": True}, "$unset": {"verification_token": ""}})
+        return {"message": "Email verified successfully!"}
+    else:
+        raise HTTPException(status_code=400, detail="Verification failed: Invalid token or user ID.")
 
 @app.get("/users/me/", response_model=auth.User)
 async def read_users_me(current_user: auth.UserInDB = Depends(current_active_user_dependency)):
