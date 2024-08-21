@@ -10,6 +10,11 @@ from passlib.context import CryptContext
 from motor.motor_asyncio import AsyncIOMotorClient
 from datetime import datetime, timedelta
 
+from fastapi.responses import JSONResponse
+from authlib.integrations.starlette_client import OAuth, OAuthError
+from starlette.middleware.sessions import SessionMiddleware
+
+
 mongostr = "mongodb+srv://admin:C5Qt4vWNogmRSlVi@backpackk.tmkdask.mongodb.net/"
 client = AsyncIOMotorClient(mongostr)
 db = client['backpackk']
@@ -61,12 +66,6 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from bson.objectid import ObjectId
 
-app = FastAPI()
-mongostr = "mongodb+srv://admin:C5Qt4vWNogmRSlVi@backpackk.tmkdask.mongodb.net/"
-client = AsyncIOMotorClient(mongostr)
-db = client['backpackk']
-users_collection = db['users']
-
 def generate_verification_token(length=6):
     return ''.join(random.choices(string.ascii_letters + string.digits, k=length))
 
@@ -97,11 +96,9 @@ def send_verification_email(user_email, token, user_id):
 
 
 
-
-
-@app.post("/register/")
+@app.post("/register")
 async def register_user(user: auth.UserCreate, background_tasks: BackgroundTasks):
-    existing_user = await users_collection.find_one({"email": user.email})
+    existing_user = await usercollection.find_one({"email": user.email})
     if existing_user:
         raise HTTPException(status_code=400, detail="User already exists.")
     
@@ -114,7 +111,7 @@ async def register_user(user: auth.UserCreate, background_tasks: BackgroundTasks
     user_dict["verified"] = False
     user_dict["verification_token"] = token
 
-    new_user = await users_collection.insert_one(user_dict)
+    new_user = await usercollection.insert_one(user_dict)
     user_id = str(new_user.inserted_id)
 
     background_tasks.add_task(send_verification_email, user.email, token, user_id)
@@ -123,14 +120,14 @@ async def register_user(user: auth.UserCreate, background_tasks: BackgroundTasks
 
 @app.get("/verify/{user_id}/{token}")
 async def verify_user(user_id: str, token: str):
-    user = await users_collection.find_one({"_id": ObjectId(user_id), "verification_token": token})
+    user = await usercollection.find_one({"_id": ObjectId(user_id), "verification_token": token})
     if user:
-        await users_collection.update_one({"_id": ObjectId(user_id)}, {"$set": {"verified": True}, "$unset": {"verification_token": ""}})
+        await usercollection.update_one({"_id": ObjectId(user_id)}, {"$set": {"verified": True}, "$unset": {"verification_token": ""}})
         return {"message": "Email verified successfully!"}
     else:
         raise HTTPException(status_code=400, detail="Verification failed: Invalid token or user ID.")
 
-@app.get("/users/me/", response_model=auth.User)
+@app.get("/users/me", response_model=auth.User)
 async def read_users_me(current_user: auth.UserInDB = Depends(current_active_user_dependency)):
     return current_user
 @app.post('/tripgenerator')
@@ -141,3 +138,87 @@ async def generator(param: tripgenModel):
     trip = TripCreator(city_name=city_name, place_types=place_types, no_of_days=no_of_days)
     new_trip = await trip.create_trip()
     return new_trip
+import os
+
+async def find_or_create_user(email, first_name, last_name):
+    user = await usercollection.find_one({"email": email})
+    if user:
+        return user
+
+    
+    new_user = UserCreate(
+        email=email,
+        first_name=first_name,
+        last_name=last_name,
+        password=''  
+    ).dict()
+    new_user["verified"] = True  
+    new_user["disabled"] = False
+    await usercollection.insert_one(new_user)
+    return new_user
+
+secret_key = os.getenv("SESSION_SECRET_KEY", "default_fallback_secret_key")
+from jose import jwt
+import requests
+from fastapi.responses import RedirectResponse
+from fastapi import Request
+app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY)
+oauth = OAuth()
+oauth.register(
+    name='google',
+    client_id='794713488480-8iqh9m6p3a93clvqrfrdjakt8q22movg.apps.googleusercontent.com',
+    client_secret='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',
+    authorize_url='https://accounts.google.com/o/oauth2/auth',
+    token_url='https://accounts.google.com/o/oauth2/token',
+    redirect_uri='http://localhost:8000/auth/callback',
+    client_kwargs={'scope': 'openid profile email'},
+)
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import RedirectResponse
+from starlette.requests import Request
+
+
+google_router = APIRouter()
+app.include_router(google_router, prefix="/auth")
+
+SECRET_KEY = os.getenv("SECRET_KEY", "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")
+
+@app.get("/google")
+async def google_auth(request: Request):
+    # Construct the redirect URI
+    redirect_uri = request.url_for("google_callback")
+
+    # Ensure that the redirect_uri matches what is configured in Google Cloud Console
+    return await oauth.google.authorize_redirect(request, redirect_uri)
+
+@app.get("/callback")
+async def google_callback(request: Request):
+    try:
+        # Retrieve the token from Google
+        token = await oauth.google.authorize_access_token(request)
+
+        # Retrieve user info from Google
+        user_info = await oauth.google.get('userinfo', token=token)
+        email = user_info.data['email']
+        first_name = user_info.data['given_name']
+        last_name = user_info.data['family_name']
+
+        # Find or create the user in your database
+        user = await find_or_create_user(email, first_name, last_name)
+
+        # Generate a session token using JWT
+        session_token = jwt.encode({"sub": str(user["_id"])}, SECRET_KEY, algorithm="HS256")
+
+        # Redirect to the home page with the session token in a cookie
+        response = RedirectResponse(url="/")
+        response.set_cookie(key="session_token", value=session_token, httponly=True)
+
+        return response
+
+    except Exception as e:
+        # Raise an HTTPException with detailed error information
+        raise HTTPException(status_code=400, detail=f"Authentication failed: {str(e)}")
+
+
+
+
