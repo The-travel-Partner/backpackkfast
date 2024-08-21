@@ -40,15 +40,9 @@ class TripCreator:
 
         places = place(placetypes=self.place_types, northeast=northeast, southwest=southwest)
         result = await places.getAll()
+        print(json.dumps(result['tourist_attraction'], indent=4))
 
-        prompt = result['tourist_attraction']
 
-        finaltour = {}
-        for j in prompt:
-            k = prompt[j]
-            k.pop('photos')
-            finaltour[j] = k
-        print(json.dumps(finaltour, indent=4))
 
         vertexai.init(project='backpackk', location='asia-south1')
         tools = [
@@ -122,7 +116,7 @@ class TripCreator:
                                   Minimum rating of 4 or above
                                   Minimum 700 reviews
                                   Include 1 or 2 lakes if there are any
-                                  {result}
+                                  {result['tourist_attraction']}
                                   Give the response in json format like this only 
                                   "Udaigarh Udaipur": 
                        "name": "Udaigarh Udaipur",
@@ -155,12 +149,15 @@ class TripCreator:
         js = js.replace("json", "")
         js = js.replace("```", "")
         finaljson = json.loads(js)
-        result['tourist_attraction'] = finaljson
+        filtered_json = {key: result['tourist_attraction'][key] for key in result['tourist_attraction'] if key in finaljson}
+        result['tourist_attraction'] = filtered_json
+        print(json.dumps(result['tourist_attraction'],indent=4))
 
         df = pd.DataFrame()
         for types in self.place_types:
             for item in result[types]:
-                s = pd.DataFrame(columns=['Name', 'lat', 'lng', 'rating', 'number', 'place_id', 'type'])
+                j=[]
+                s = pd.DataFrame(columns=['Name', 'lat', 'lng', 'rating', 'number', 'place_id', 'type','photos'])
                 s['Name'] = [result[types][item]['name']]
                 s['lat'] = [result[types][item]['lat']]
                 s['lng'] = [result[types][item]['lng']]
@@ -168,6 +165,13 @@ class TripCreator:
                 s['number'] = [result[types][item]['number']]
                 s['place_id'] = [result[types][item]['place_id']]
                 s['type'] = [result[types][item]['type']]
+                for photo in result[types][item]['photos']:
+                    print(photo['name'])
+                    j.append(photo['name'])
+                print(j)
+
+                s['photos'].loc[0] = j
+
 
                 df = pd.concat([df, s], axis=0, ignore_index=True)
         weights = [0.3, 0.7]

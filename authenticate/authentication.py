@@ -16,6 +16,7 @@ class authenticate:
     class Token(BaseModel):
         access_token: str
         token_type: str
+        first_name: str
 
 
     class TokenData(BaseModel):
@@ -26,6 +27,7 @@ class authenticate:
         first_name: str
         last_name: str
         password: str
+
 
     class User(BaseModel):
         email: EmailStr
