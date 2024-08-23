@@ -372,3 +372,21 @@ async def reset_password(param:resetpass):
         raise HTTPException(status_code=400, detail="Reset token has expired.")
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=400, detail="Invalid reset token.")
+
+import requests  
+from typing import List
+GOOGLE_API_KEY = "AIzaSyCzTbejaiLzlYUzDI8ZReYNgEF9UaS-X1E"
+@app.get("/autocomplete")
+async def autocomplete_city_name(query: str = Query(..., min_length=1, description="City name to autocomplete")) -> List[str]:
+    url = "https://maps.googleapis.com/maps/api/place/autocomplete/json"
+    params = {
+        "input": query,
+        "types": "(cities)",
+        "key": GOOGLE_API_KEY,
+    }
+    response = requests.get(url, params=params)
+    predictions = response.json().get("predictions", [])
+
+    city_names = [prediction["description"] for prediction in predictions]
+
+    return city_names
