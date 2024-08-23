@@ -1,6 +1,9 @@
 from urllib.request import Request
 
+import requests
+from jose import jwt
 from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import FastAPI, Response
 from fastapi.security import OAuth2PasswordRequestForm, OAuth2AuthorizationCodeBearer
 from pydantic import BaseModel
 from starlette.middleware.cors import CORSMiddleware
@@ -11,11 +14,12 @@ from tripgen.tripcreator import TripCreator
 from passlib.context import CryptContext
 from motor.motor_asyncio import AsyncIOMotorClient
 from datetime import datetime, timedelta
-
+from authenticate.verifytempToken import VerifyToken
 from fastapi.responses import JSONResponse
 from authlib.integrations.starlette_client import OAuth, OAuthError
 from starlette.middleware.sessions import SessionMiddleware
-
+from io import BytesIO
+from PIL import Image
 from motor.motor_asyncio import AsyncIOMotorClient
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from pydantic import BaseModel, EmailStr
@@ -63,11 +67,14 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
             detail="Incorrect email or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    existing_user = await usercollection.find_one({"email": user.email})
+    name = existing_user.get('first_name')
+    print(name)
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = auth.create_access_token(
         data={"sub": user.email}, expires_delta=access_token_expires
     )
-    return {"access_token": access_token, "token_type": "bearer"}
+    return {"access_token": access_token, "token_type": "bearer", "first_name": name}
 
 
 def generate_verification_token(length=6):
@@ -152,7 +159,7 @@ async def generator(param: tripgenModel):
 import os
 
 
-async def find_or_create_user(email, first_name, last_name):
+async def find_or_create_user(email, first_name, last_name='nil'):
     user = await usercollection.find_one({"email": email})
     if user:
         return user
@@ -172,7 +179,9 @@ async def find_or_create_user(email, first_name, last_name):
 secret_key = os.getenv("SESSION_SECRET_KEY", "default_fallback_secret_key")
 origins = [
     "http://localhost:5173",
-    "localhost:5173"
+    "localhost:5173",
+    "http://localhost:5173/signup",
+    "http://localhost:5173/login"
 ]
 app.add_middleware(
 
@@ -180,13 +189,17 @@ app.add_middleware(
     secret_key=SECRET_KEY,
 
 )
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"]
+)
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import RedirectResponse
 from starlette.requests import Request
-
-google_router = APIRouter()
-app.include_router(google_router, prefix="/auth")
 
 SECRET_KEY = os.getenv("SECRET_KEY", "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")
 oauth2_scheme = OAuth2AuthorizationCodeBearer(
@@ -206,6 +219,14 @@ async def google_auth(request: Request):
 
 
 from httpx import AsyncClient
+
+
+def generate_temp_token(email: str):
+    payload = {
+        "email": email,
+        "exp": datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    }
+    return jwt.encode(payload, SECRET_KEY, algorithm="HS256")
 
 
 @app.get("/callback")
@@ -235,13 +256,52 @@ async def google_callback(code: str):
         user_info_url = f"https://www.googleapis.com/oauth2/v1/userinfo?access_token={access_token}"
         user_info_response = await client.get(user_info_url)
         user_info = user_info_response.json()
+        print(user_info)
         email = user_info['email']
         first_name = user_info['given_name']
-        last_name = user_info['family_name']
-        user = await find_or_create_user(email, first_name, last_name)
+        if 'family_name' in user_info:
+            last_name = user_info['family_name']
+            user = await find_or_create_user(email, first_name, last_name)
+        else:
+            user = await find_or_create_user(email, first_name)
+        temp_token = generate_temp_token(email)
+        response = RedirectResponse(f'http://localhost:5173/intermediate?token={temp_token}')
+        return response
+
+
+
+
+
+@app.post("/verifytemp")
+async def verify_temp_token(param: VerifyToken):
+    temptoken = param.temptoken
+    payload = jwt.decode(temptoken, SECRET_KEY, algorithms=["HS256"])
+    if payload:
+        email = payload.get("email")
+        existing_user = await usercollection.find_one({"email": email})
         access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        email = existing_user.get('email')
         access_token = auth.create_access_token(
             data={"sub": email}, expires_delta=access_token_expires
         )
+        return {"access_token": access_token}
 
-        return {"access_token": access_token, "token_type": "bearer"}
+
+@app.get("/getphoto")
+async def get_photo(name: str, current_user: auth.UserInDB = Depends(current_active_user_dependency)):
+    if current_user:
+
+        print(name)
+        photo_url = f"https://places.googleapis.com/v1/{name}/media?maxHeightPx=400&maxWidthPx=400&key=AIzaSyCzTbejaiLzlYUzDI8ZReYNgEF9UaS-X1E"
+        photo_response = requests.get(photo_url)
+        print(photo_response.content)
+        if photo_response.status_code != 200:
+            raise HTTPException(status_code=photo_response.status_code, detail="Failed to retrieve photo.")
+
+        # Step 3: Convert the image to a format that can be returned
+        image = Image.open(BytesIO(photo_response.content))
+        img_byte_arr = BytesIO()
+        image.save(img_byte_arr, format='JPEG')
+        img_byte_arr = img_byte_arr.getvalue()
+
+        return Response(content=img_byte_arr, media_type="image/jpeg")
