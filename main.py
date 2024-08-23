@@ -286,22 +286,89 @@ async def verify_temp_token(param: VerifyToken):
         )
         return {"access_token": access_token}
 
+        return {"access_token": access_token, "token_type": "bearer"}
 
-@app.get("/getphoto")
-async def get_photo(name: str, current_user: auth.UserInDB = Depends(current_active_user_dependency)):
-    if current_user:
+from fastapi import Query, Depends
+from jose import jwt
 
-        print(name)
-        photo_url = f"https://places.googleapis.com/v1/{name}/media?maxHeightPx=400&maxWidthPx=400&key=AIzaSyCzTbejaiLzlYUzDI8ZReYNgEF9UaS-X1E"
-        photo_response = requests.get(photo_url)
-        print(photo_response.content)
-        if photo_response.status_code != 200:
-            raise HTTPException(status_code=photo_response.status_code, detail="Failed to retrieve photo.")
+def generate_reset_token(email: str):
+    payload = {
+        "email": email,
+        "exp": datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    }
+    return jwt.encode(payload, SECRET_KEY, algorithm="HS256")
 
-        # Step 3: Convert the image to a format that can be returned
-        image = Image.open(BytesIO(photo_response.content))
-        img_byte_arr = BytesIO()
-        image.save(img_byte_arr, format='JPEG')
-        img_byte_arr = img_byte_arr.getvalue()
+def send_reset_email(email: str, token: str):
+    sender_email = "nimishspslosal@gmail.com"
+    sender_password = "axmdvfpmiewtzmsd"
+    receiver_email = email
 
-        return Response(content=img_byte_arr, media_type="image/jpeg")
+    subject = "Password Reset Request"
+    reset_link = f"http://localhost:8000/reset-password?token={token}"
+    body = f"Please click on the following link to reset your password: {reset_link}"
+
+    message = MIMEMultipart()
+    message["From"] = sender_email
+    message["To"] = receiver_email
+    message["Subject"] = subject
+
+    message.attach(MIMEText(body, "plain"))
+
+    try:
+        server = smtplib.SMTP("smtp.gmail.com", 587)
+        server.starttls()
+        server.login(sender_email, sender_password)
+        server.sendmail(sender_email, receiver_email, message.as_string())
+        server.quit()
+        print("Password reset email sent successfully!")
+    except Exception as e:
+        print(f"Failed to send email: {str(e)}")
+
+@app.get("/forgot-password")
+async def forgot_password(email: EmailStr, background_tasks: BackgroundTasks):
+    user = await usercollection.find_one({"email": email})
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found.")
+
+    token = generate_reset_token(user['email'])
+    background_tasks.add_task(send_reset_email, user['email'], token)
+
+    return {"message": "Password reset link sent to your email."}
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+@app.post("/forgot-password")
+async def forgot_password(request: ForgotPasswordRequest, background_tasks: BackgroundTasks):
+    user = await usercollection.find_one({"email": request.email})
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found.")
+
+    token = generate_reset_token(user['email'])
+    background_tasks.add_task(send_reset_email, user['email'], token)
+
+    return {"message": "Password reset link sent to your email."}
+from resetpassmodel import reset_pass
+@app.post("/reset-password")
+async def reset_password(param:reset_pass):
+    token = param.token
+    new_password = param.new_password
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+        email = payload.get("email")
+        
+        if not email:
+            raise HTTPException(status_code=400, detail="Invalid token.")
+
+        user = await usercollection.find_one({"email": email})
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found.")
+
+        hashed_password = auth.get_password_hash(new_password)
+        await usercollection.update_one({"email": email}, {"$set": {"hashed_password": hashed_password}})
+        
+        return {"message": "Password has been reset successfully."}
+
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=400, detail="Reset token has expired.")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=400, detail="Invalid reset token.")
