@@ -245,3 +245,88 @@ async def google_callback(code: str):
         )
 
         return {"access_token": access_token, "token_type": "bearer"}
+
+from fastapi import Query, Depends
+from jose import jwt
+
+def generate_reset_token(email: str):
+    payload = {
+        "email": email,
+        "exp": datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    }
+    return jwt.encode(payload, SECRET_KEY, algorithm="HS256")
+
+def send_reset_email(email: str, token: str):
+    sender_email = "nimishspslosal@gmail.com"
+    sender_password = "axmdvfpmiewtzmsd"
+    receiver_email = email
+
+    subject = "Password Reset Request"
+    reset_link = f"http://localhost:8000/reset-password?token={token}"
+    body = f"Please click on the following link to reset your password: {reset_link}"
+
+    message = MIMEMultipart()
+    message["From"] = sender_email
+    message["To"] = receiver_email
+    message["Subject"] = subject
+
+    message.attach(MIMEText(body, "plain"))
+
+    try:
+        server = smtplib.SMTP("smtp.gmail.com", 587)
+        server.starttls()
+        server.login(sender_email, sender_password)
+        server.sendmail(sender_email, receiver_email, message.as_string())
+        server.quit()
+        print("Password reset email sent successfully!")
+    except Exception as e:
+        print(f"Failed to send email: {str(e)}")
+
+@app.get("/forgot-password")
+async def forgot_password(email: EmailStr, background_tasks: BackgroundTasks):
+    user = await usercollection.find_one({"email": email})
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found.")
+
+    token = generate_reset_token(user['email'])
+    background_tasks.add_task(send_reset_email, user['email'], token)
+
+    return {"message": "Password reset link sent to your email."}
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+@app.post("/forgot-password")
+async def forgot_password(request: ForgotPasswordRequest, background_tasks: BackgroundTasks):
+    user = await usercollection.find_one({"email": request.email})
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found.")
+
+    token = generate_reset_token(user['email'])
+    background_tasks.add_task(send_reset_email, user['email'], token)
+
+    return {"message": "Password reset link sent to your email."}
+from resetpassmodel import reset_pass
+@app.post("/reset-password")
+async def reset_password(param:reset_pass):
+    token = param.token
+    new_password = param.new_password
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+        email = payload.get("email")
+        
+        if not email:
+            raise HTTPException(status_code=400, detail="Invalid token.")
+
+        user = await usercollection.find_one({"email": email})
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found.")
+
+        hashed_password = auth.get_password_hash(new_password)
+        await usercollection.update_one({"email": email}, {"$set": {"hashed_password": hashed_password}})
+        
+        return {"message": "Password has been reset successfully."}
+
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=400, detail="Reset token has expired.")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=400, detail="Invalid reset token.")
