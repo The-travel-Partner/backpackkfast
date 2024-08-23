@@ -8,7 +8,7 @@ import vertexai
 import pandas as pd
 from tripgen.asyncclass import place
 import sys
-
+import copy
 
 class TripCreator:
     def __init__(self, city_name, place_types, no_of_days):
@@ -42,6 +42,12 @@ class TripCreator:
         result = await places.getAll()
         print(json.dumps(result['tourist_attraction'], indent=4))
 
+        prompt = copy.deepcopy(result['tourist_attraction'])
+        finaltour = {}
+        for j in prompt:
+            k = prompt[j]
+            k.pop('photos')
+            finaltour[j] = k
 
 
         vertexai.init(project='backpackk', location='asia-south1')
@@ -116,7 +122,7 @@ class TripCreator:
                                   Minimum rating of 4 or above
                                   Minimum 700 reviews
                                   Include 1 or 2 lakes if there are any
-                                  {result['tourist_attraction']}
+                                  {finaltour}
                                   Give the response in json format like this only 
                                   "Udaigarh Udaipur": 
                        "name": "Udaigarh Udaipur",
@@ -209,7 +215,7 @@ class TripCreator:
         print(df_distances)
 
         def divide_places(n):
-            sorted_df = df_sorted.sort_values(by=['rating', 'number'], ascending=False)
+            sorted_df = df_sorted.sort_values(by=['weighted_avg'], ascending=False)
 
             total_places = len(sorted_df)
             places_per_day = min(total_places // n, 4)  # per day maximum 4 place
