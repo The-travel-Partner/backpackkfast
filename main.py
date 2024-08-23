@@ -2,7 +2,7 @@ from urllib.request import Request
 
 import requests
 from jose import jwt
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import FastAPI, Depends, HTTPException, status, Query
 from fastapi import FastAPI, Response
 from fastapi.security import OAuth2PasswordRequestForm, OAuth2AuthorizationCodeBearer
 from pydantic import BaseModel
