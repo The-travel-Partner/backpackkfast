@@ -286,9 +286,9 @@ async def verify_temp_token(param: VerifyToken):
         )
         return {"access_token": access_token}
 
-        return {"access_token": access_token, "token_type": "bearer"}
 
-from fastapi import Query, Depends
+
+
 from jose import jwt
 
 def generate_reset_token(email: str):
@@ -347,9 +347,9 @@ async def forgot_password(request: ForgotPasswordRequest, background_tasks: Back
     background_tasks.add_task(send_reset_email, user['email'], token)
 
     return {"message": "Password reset link sent to your email."}
-from resetpassmodel import reset_pass
+from resetpassmodel import resetpass
 @app.post("/reset-password")
-async def reset_password(param:reset_pass):
+async def reset_password(param:resetpass):
     token = param.token
     new_password = param.new_password
     try:
