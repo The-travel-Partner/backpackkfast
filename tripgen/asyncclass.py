@@ -24,7 +24,7 @@ class retrieveplace:
         headers = {
             "Content-Type": "application/json",
             "X-Goog-Api-Key": "AIzaSyDiRKM906YNP9P9_QY9Uz-pNqdhb9gXnXc",
-            "X-Goog-FieldMask": "places.id,places.location,places.rating,places.userRatingCount,places.editorialSummary,places.types,places.photos,places.displayName",
+            "X-Goog-FieldMask": "places.id,places.location,places.rating,places.userRatingCount,places.types,places.photos,places.displayName",
         }
 
         datas = []
@@ -197,6 +197,7 @@ class place(retrieveplace):
             if place == "tourist_attraction":
                 print("hello")
                 res = await self.touristattraction()
+
                 self.result['tourist_attraction'] = res
             elif place == "museum":
                 res = await self.museums()

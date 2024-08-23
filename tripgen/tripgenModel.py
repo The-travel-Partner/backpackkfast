@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-
+from typing import List
 
 class tripgenModel(BaseModel):
     city_name: str
