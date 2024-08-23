@@ -3,7 +3,7 @@ import json
 import random
 
 import aiohttp.client
-
+from unidecode import unidecode
 
 class retrieveplace:
     def __init__(self, northeast, southwest):
@@ -13,9 +13,21 @@ class retrieveplace:
         self.resultother = {}
 
     async def _send_post_request(self, session, url, data):
+        # Convert non-ASCII characters to ASCII
+        def convert_to_ascii(data):
+            if isinstance(data, dict):
+                return {k: convert_to_ascii(v) for k, v in data.items()}
+            elif isinstance(data, list):
+                return [convert_to_ascii(i) for i in data]
+            elif isinstance(data, str):
+                return unidecode(data)
+            return data
+
+
         async with session.post(url, json=data) as response:
             response.encoding = 'utf-8'
-            return await response.json()
+            resp = await response.json()
+            return convert_to_ascii( resp)
 
     async def touristplace(self, placetype):
 
@@ -166,25 +178,15 @@ class place(retrieveplace):
         self.museum = super().duplicateremover(res)
         return self.museum
 
-    async def nightlife(self):
-
-        nightindex = self.types.index("night_life")
-        if nightindex is not None:
-            subtype = ['night_club', 'bar']
-            for i in subtype:
-                res = await super().other(placetype=i)
-                self.night_life.update(super().duplicateremover(res))
+    async def nightlife(self,place):
+        res = await super().other(placetype=place)
+        self.night_life.update(super().duplicateremover(res))
         return self.night_life
 
-    async def religious(self):
-        religiousindex = self.types.index('religious')
-        if religiousindex is not None:
-            subtype = ['hindu_temple', 'mosque', 'church']
-            for i in subtype:
-                res = await super().other(placetype=i)
-                self.religiousplace.update(super().duplicateremover(res))
-
-        return self.religious
+    async def religious(self, place):
+        res = await super().other(placetype=place)
+        self.religiousplace.update(super().duplicateremover(res))
+        return self.religiousplace
 
     async def zoos(self):
         index = self.types.index("zoo")
@@ -202,11 +204,11 @@ class place(retrieveplace):
             elif place == "museum":
                 res = await self.museums()
                 self.result["museum"] = res
-            elif place == "night_life":
-                res = await self.nightlife()
+            elif place == "night_club" or place =="bar":
+                res = await self.nightlife(place)
                 self.result["night_life"] = res
             elif place == "hindu_temple" or place == "mosque" or place == "church":
-                res = await self.religious()
+                res = await self.religious(place)
                 self.result[f"{place}"] = res
             elif place == "zoo":
                 res = await self.zoos()
