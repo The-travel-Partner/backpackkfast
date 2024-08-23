@@ -305,9 +305,9 @@ async def forgot_password(request: ForgotPasswordRequest, background_tasks: Back
     background_tasks.add_task(send_reset_email, user['email'], token)
 
     return {"message": "Password reset link sent to your email."}
-from resetpassmodel import reset_pass
+from resetpassmodel import resetpass
 @app.post("/reset-password")
-async def reset_password(param:reset_pass):
+async def resetpassword(param:resetpass):
     token = param.token
     new_password = param.new_password
     try:
@@ -330,3 +330,20 @@ async def reset_password(param:reset_pass):
         raise HTTPException(status_code=400, detail="Reset token has expired.")
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=400, detail="Invalid reset token.")
+    
+import requests  
+from typing import List
+GOOGLE_API_KEY = "AIzaSyCzTbejaiLzlYUzDI8ZReYNgEF9UaS-X1E"
+@app.get("/autocomplete")
+async def autocomplete_city_name(query: str = Query(..., min_length=1, description="City name to autocomplete")) -> List[str]:
+    url = "https://maps.googleapis.com/maps/api/place/autocomplete/json"
+    params = {
+        "input": query,
+        "types": "(cities)",
+        "key": GOOGLE_API_KEY,
+    }
+    response = requests.get(url, params=params)
+    predictions = response.json().get("predictions", [])
+    
+    city_names = [prediction["description"] for prediction in predictions]
+    return city_names    
