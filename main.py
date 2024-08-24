@@ -2,7 +2,7 @@ from urllib.request import Request
 
 import requests
 from jose import jwt
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import FastAPI, Depends, HTTPException, status, Query
 from fastapi import FastAPI, Response
 from fastapi.security import OAuth2PasswordRequestForm, OAuth2AuthorizationCodeBearer
 from pydantic import BaseModel
@@ -281,10 +281,11 @@ async def verify_temp_token(param: VerifyToken):
         existing_user = await usercollection.find_one({"email": email})
         access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
         email = existing_user.get('email')
+        name = existing_user.get('first_name')
         access_token = auth.create_access_token(
             data={"sub": email}, expires_delta=access_token_expires
         )
-        return {"access_token": access_token}
+        return {"access_token": access_token, 'first_name':name}
 
 
 
@@ -338,8 +339,9 @@ class ForgotPasswordRequest(BaseModel):
     email: EmailStr
 
 @app.post("/forgot-password")
-async def forgot_password(request: ForgotPasswordRequest, background_tasks: BackgroundTasks):
-    user = await usercollection.find_one({"email": request.email})
+async def forgot_password(param: ForgotPasswordRequest, background_tasks: BackgroundTasks):
+
+    user = await usercollection.find_one({"email": param.email})
     if not user:
         raise HTTPException(status_code=404, detail="User not found.")
 
@@ -348,6 +350,15 @@ async def forgot_password(request: ForgotPasswordRequest, background_tasks: Back
 
     return {"message": "Password reset link sent to your email."}
 from resetpassmodel import resetpass
+
+@app.get("/reset-password")
+async def reset_password(token: str):
+    payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+    email = payload.get("email")
+    if not email:
+        raise HTTPException(status_code=404, detail="Invalid token.")
+    response = RedirectResponse(f'http://localhost:5173/resetpassword?token={token}')
+    return response
 @app.post("/reset-password")
 async def reset_password(param:resetpass):
     token = param.token
@@ -390,3 +401,23 @@ async def autocomplete_city_name(query: str = Query(..., min_length=1, descripti
     city_names = [prediction["description"] for prediction in predictions]
 
     return city_names
+
+
+@app.get("/getphoto")
+async def get_photo(name: str, current_user: auth.UserInDB = Depends(current_active_user_dependency)):
+    if current_user:
+
+        print(name)
+        photo_url = f"https://places.googleapis.com/v1/{name}/media?maxHeightPx=400&maxWidthPx=400&key=AIzaSyCzTbejaiLzlYUzDI8ZReYNgEF9UaS-X1E"
+        photo_response = requests.get(photo_url)
+        print(photo_response.content)
+        if photo_response.status_code != 200:
+            raise HTTPException(status_code=photo_response.status_code, detail="Failed to retrieve photo.")
+
+        # Step 3: Convert the image to a format that can be returned
+        image = Image.open(BytesIO(photo_response.content))
+        img_byte_arr = BytesIO()
+        image.save(img_byte_arr, format='JPEG')
+        img_byte_arr = img_byte_arr.getvalue()
+
+        return Response(content=img_byte_arr, media_type="image/jpeg")
