@@ -13,7 +13,8 @@ import sys
 import copy
 
 class TripCreator:
-    def __init__(self, city_name, place_types, no_of_days):
+    def __init__(self,request, city_name, place_types, no_of_days):
+        self.request=request
         self.city_name = city_name
         self.place_types = place_types
         self.no_of_days = no_of_days
@@ -41,6 +42,9 @@ class TripCreator:
         print('Southwest coordinates:', southwest)
 
         places = place(placetypes=self.place_types, northeast=northeast, southwest=southwest)
+        if await self.request.is_disconnected():
+            print("Client disconnected during step 3.")
+            return {"status": "Process stopped"}
         result = await places.getAll()
         print(json.dumps(result['tourist_attraction'], indent=4))
 
@@ -51,7 +55,9 @@ class TripCreator:
             k.pop('photos')
             finaltour[j] = k
 
-
+        if await self.request.is_disconnected():
+            print("Client disconnected during step 3.")
+            return {"status": "Process stopped"}
         vertexai.init(project='backpackk', location='asia-south1')
         tools = [
             Tool.from_google_search_retrieval(
@@ -117,6 +123,9 @@ class TripCreator:
             text = text + " " + self.place_types[i]
         places = 20
         output = 0
+        if await self.request.is_disconnected():
+            print("Client disconnected during step 3.")
+            return {"status": "Process stopped"}
         js = convo.send_message([f"""
                                   Suggest me 20 most searched tourist attractions in {self.city_name} from this places data
 
@@ -151,6 +160,9 @@ class TripCreator:
                                   """], generation_config=generation_config
                                 ).to_dict()['candidates'][0]['content']['parts'][0]['text']
 
+        if await self.request.is_disconnected():
+            print("Client disconnected during step 3.")
+            return {"status": "Process stopped"}
         print(js)
         convo.history.clear()
 
@@ -162,6 +174,9 @@ class TripCreator:
         print(json.dumps(result['tourist_attraction'],indent=4))
 
         df = pd.DataFrame()
+        if await self.request.is_disconnected():
+            print("Client disconnected during step 3.")
+            return {"status": "Process stopped"}
         for types in self.place_types:
             for item in result[types]:
                 j=[]
@@ -188,7 +203,9 @@ class TripCreator:
         df_sorted = df.sort_values(by='weighted_avg', ascending=False)
         df_sorted = df_sorted.drop_duplicates(subset='Name', keep='first', inplace=False)
         df_sorted.to_csv('bigdata.csv')
-
+        if await self.request.is_disconnected():
+            print("Client disconnected during step 3.")
+            return {"status": "Process stopped"}
         gmaps = googlemaps.Client(key='AIzaSyCzTbejaiLzlYUzDI8ZReYNgEF9UaS-X1E')
 
 
@@ -214,11 +231,13 @@ class TripCreator:
             return df_dist_matrix
 
         n = int(self.no_of_days)
-
+        if await self.request.is_disconnected():
+            print("Client disconnected during step 3.")
+            return {"status": "Process stopped"}
         df_distances = compute_distance_matrix(df_sorted)
         print(df_distances)
         threshold = 50
-        data = df_sorted[df_sorted['weighted_avg'] >= threshold]
+        df_sorted = df_sorted[df_sorted['weighted_avg'] >= threshold]
 
         def divide_places(n, data, df_distances):
             sorted_df = data.sort_values(by='weighted_avg', ascending=False)
@@ -251,7 +270,9 @@ class TripCreator:
                 days.append(day)
 
             return days
-
+        if await self.request.is_disconnected():
+            print("Client disconnected during step 3.")
+            return {"status": "Process stopped"}
         days = divide_places(n, df_sorted, df_distances)
         day_wise = {}
         for i, day in enumerate(days,1):

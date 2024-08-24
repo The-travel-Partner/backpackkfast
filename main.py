@@ -1,8 +1,9 @@
 from urllib.request import Request
 
+import asyncio
 import requests
 from jose import jwt
-from fastapi import FastAPI, Depends, HTTPException, status, Query
+from fastapi import FastAPI, Depends, HTTPException, status, Query,Request
 from fastapi import FastAPI, Response
 from fastapi.security import OAuth2PasswordRequestForm, OAuth2AuthorizationCodeBearer
 from pydantic import BaseModel
@@ -41,11 +42,15 @@ ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 auth = authenticate(secretkey=SECRET_KEY, algorithm=ALGORITHM, usercollection=usercollection)
 
+
+
+
 app = FastAPI()
 
 
 async def current_active_user_dependency(current_user: auth.UserInDB = Depends(auth.get_current_user)):
     return await auth.get_current_active_user(current_user)
+
 
 
 @app.get("/")
@@ -147,13 +152,18 @@ async def read_users_me(current_user: auth.UserInDB = Depends(current_active_use
 
 
 @app.post('/tripgenerator')
-async def generator(param: tripgenModel):
-    city_name = param.city_name
-    place_types = param.place_types
-    no_of_days = param.no_of_days
-    trip = TripCreator(city_name=city_name, place_types=place_types, no_of_days=no_of_days)
-    new_trip = await trip.create_trip()
-    return new_trip
+async def generator(param: tripgenModel, request: Request, current_user: auth.UserInDB = Depends(current_active_user_dependency)):
+    if current_user:
+        city_name = param.city_name
+        place_types = param.place_types
+        no_of_days = param.no_of_days
+        trip = TripCreator(request=request,city_name=city_name, place_types=place_types, no_of_days=no_of_days)
+        new_trip = await trip.create_trip()
+
+        collection = str(current_user.email)
+        usertripCollection = db[collection]
+        await usertripCollection.insert_one({'city_name': city_name, 'place_types': place_types, 'no_of_days': no_of_days, 'trip': new_trip})
+        return new_trip
 
 
 import os
@@ -172,7 +182,7 @@ async def find_or_create_user(email, first_name, last_name='nil'):
     ).dict()
     new_user["verified"] = True
     new_user["disabled"] = False
-    await usercollection.insert_one(new_user)
+
     return new_user
 
 
@@ -387,37 +397,59 @@ async def reset_password(param:resetpass):
 import requests  
 from typing import List
 GOOGLE_API_KEY = "AIzaSyCzTbejaiLzlYUzDI8ZReYNgEF9UaS-X1E"
-@app.get("/autocomplete")
-async def autocomplete_city_name(query: str = Query(..., min_length=1, description="City name to autocomplete")) -> List[str]:
-    url = "https://maps.googleapis.com/maps/api/place/autocomplete/json"
-    params = {
-        "input": query,
-        "types": "(cities)",
-        "key": GOOGLE_API_KEY,
-    }
-    response = requests.get(url, params=params)
-    predictions = response.json().get("predictions", [])
+@app.get("/autocomplete" )
+async def autocomplete_city_name(query: str = Query(..., min_length=1, description="City name to autocomplete")):
 
-    city_names = [prediction["description"] for prediction in predictions]
+        url = "https://maps.googleapis.com/maps/api/place/autocomplete/json"
+        params = {
+            "input": query,
+            "types": "(cities)",
+            "key": GOOGLE_API_KEY,
+        }
+        print('hello')
+        response = requests.get(url, params=params)
+        predictions = response.json().get("predictions", [])
 
-    return city_names
+        city_names = [prediction["description"] for prediction in predictions]
+
+        return city_names
 
 
 @app.get("/getphoto")
-async def get_photo(name: str, current_user: auth.UserInDB = Depends(current_active_user_dependency)):
+async def get_photo(name: str,request:Request, current_user: auth.UserInDB = Depends(current_active_user_dependency)):
     if current_user:
 
         print(name)
         photo_url = f"https://places.googleapis.com/v1/{name}/media?maxHeightPx=400&maxWidthPx=400&key=AIzaSyCzTbejaiLzlYUzDI8ZReYNgEF9UaS-X1E"
+        if await request.is_disconnected():
+            print("Client disconnected during step 3.")
+            return {"status": "Process stopped"}
         photo_response = requests.get(photo_url)
         print(photo_response.content)
         if photo_response.status_code != 200:
             raise HTTPException(status_code=photo_response.status_code, detail="Failed to retrieve photo.")
 
-        # Step 3: Convert the image to a format that can be returned
         image = Image.open(BytesIO(photo_response.content))
         img_byte_arr = BytesIO()
         image.save(img_byte_arr, format='JPEG')
         img_byte_arr = img_byte_arr.getvalue()
 
         return Response(content=img_byte_arr, media_type="image/jpeg")
+from contactModel import contactModel
+@app.post("/contactus")
+async def contactus(param: contactModel):
+
+    new_message = param.model_dump()
+    print(new_message)
+    collection= db['message']
+    await collection.insert_one(new_message)
+    return {'success': 'Message Received'}
+
+@app.get("/reportbug")
+async def contactus(message:str):
+
+
+    print(message)
+    collection= db['bugreport']
+    await collection.insert_one({'message':message})
+    return {'success': 'Thank You! Your contribution is valuable for us.'}
