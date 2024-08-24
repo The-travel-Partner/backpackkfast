@@ -396,7 +396,7 @@ async def reset_password(param:resetpass):
 
 import requests  
 from typing import List
-GOOGLE_API_KEY = "AIzaSyCzTbejaiLzlYUzDI8ZReYNgEF9UaS-X1E"
+GOOGLE_API_KEY = "AIzaSyAt9_35pEEtevoHJCTeJwynPqjx-9-MVjk"
 @app.get("/autocomplete" )
 async def autocomplete_city_name(query: str = Query(..., min_length=1, description="City name to autocomplete")):
 

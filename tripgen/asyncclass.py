@@ -35,7 +35,7 @@ class retrieveplace:
         url = "https://places.googleapis.com/v1/places:searchNearby"
         headers = {
             "Content-Type": "application/json",
-            "X-Goog-Api-Key": "AIzaSyDiRKM906YNP9P9_QY9Uz-pNqdhb9gXnXc",
+            "X-Goog-Api-Key": "AIzaSyAt9_35pEEtevoHJCTeJwynPqjx-9-MVjk",
             "X-Goog-FieldMask": "places.id,places.location,places.rating,places.userRatingCount,places.types,places.photos,places.displayName",
         }
 
@@ -102,7 +102,7 @@ class retrieveplace:
     async def other(self, placetype):
         headerselse = {
             "Content-Type": "application/json",
-            "X-Goog-Api-Key": "AIzaSyDiRKM906YNP9P9_QY9Uz-pNqdhb9gXnXc",
+            "X-Goog-Api-Key": "AIzaSyAt9_35pEEtevoHJCTeJwynPqjx-9-MVjk",
             "X-Goog-FieldMask": "places.id,places.location,places.rating,places.userRatingCount,places.editorialSummary,places.types,places.photos,places.displayName",
         }
         urlelse = "https://places.googleapis.com/v1/places:searchNearby"
