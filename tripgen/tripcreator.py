@@ -1,4 +1,6 @@
 import json
+import time
+
 import googlemaps
 import google.generativeai as genai
 from googlemaps.distance_matrix import distance_matrix
@@ -189,6 +191,7 @@ class TripCreator:
 
         gmaps = googlemaps.Client(key='AIzaSyCzTbejaiLzlYUzDI8ZReYNgEF9UaS-X1E')
 
+
         def compute_distance_matrix(data):
             df_dist_matrix = pd.DataFrame(index=data.index, columns=data.index)
 
@@ -202,7 +205,8 @@ class TripCreator:
                         result = distance_matrix(gmaps, origins, destinations, mode='driving')
                         for k, row in enumerate(result['rows']):
                             for l, element in enumerate(row['elements']):
-                                df_dist_matrix.at[i + k, j + l] = element['distance']['value']
+                                df_dist_matrix.at[data.index[i + k], data.index[j + l]] = element['distance']['value']
+                        time.sleep(1)
                     except googlemaps.exceptions.ApiError as e:
                         print(f"Error calculating distance matrix: {e}")
                         return pd.DataFrame()
@@ -213,6 +217,8 @@ class TripCreator:
 
         df_distances = compute_distance_matrix(df_sorted)
         print(df_distances)
+        threshold = 50
+        data = df_sorted[df_sorted['weighted_avg'] >= threshold]
 
         def divide_places(n, data, df_distances):
             sorted_df = data.sort_values(by='weighted_avg', ascending=False)
@@ -235,7 +241,7 @@ class TripCreator:
                     else:
                         distances = df_distances.loc[current_location.name]
                         combined_scores = distances[sorted_df.index].rank(ascending=True) + \
-                                        sorted_df['weighted_avg'].rank(ascending=False)
+                                          sorted_df['weighted_avg'].rank(ascending=False)
                         best_index = combined_scores.idxmin()
                         next_location = sorted_df.loc[best_index]
                         day = pd.concat([day, next_location.to_frame().T], ignore_index=True)
@@ -243,9 +249,10 @@ class TripCreator:
                         current_location = next_location
 
                 days.append(day)
+
             return days
 
-        days = divide_places(n, data, df_distances)
+        days = divide_places(n, df_sorted, df_distances)
         day_wise = {}
         for i, day in enumerate(days,1):
                 print(f"Day {i}:")

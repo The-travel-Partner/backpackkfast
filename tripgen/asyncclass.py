@@ -107,7 +107,7 @@ class retrieveplace:
         }
         urlelse = "https://places.googleapis.com/v1/places:searchNearby"
         dataselse = []
-        for i in range(3):
+        for i in range(1):
             lat = random.uniform(self.southwest[0], self.northeast[0])
             lng = random.uniform(self.southwest[1], self.northeast[1])
 
