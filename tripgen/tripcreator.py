@@ -20,7 +20,7 @@ class TripCreator:
         self.no_of_days = no_of_days
 
     async def create_trip(self):
-        gmaps = googlemaps.Client(key='AIzaSyCzTbejaiLzlYUzDI8ZReYNgEF9UaS-X1E')
+        gmaps = googlemaps.Client(key='AIzaSyAt9_35pEEtevoHJCTeJwynPqjx-9-MVjk')
         genai.configure(api_key='AIzaSyDqWSMHmOR-4kmyc8GWH9IGjrgHHsh2dJ8')
         print(self.city_name)
         print(self.no_of_days)
@@ -206,7 +206,7 @@ class TripCreator:
         if await self.request.is_disconnected():
             print("Client disconnected during step 3.")
             return {"status": "Process stopped"}
-        gmaps = googlemaps.Client(key='AIzaSyCzTbejaiLzlYUzDI8ZReYNgEF9UaS-X1E')
+        gmaps = googlemaps.Client(key='AAIzaSyAt9_35pEEtevoHJCTeJwynPqjx-9-MVjk')
 
 
         def compute_distance_matrix(data):
