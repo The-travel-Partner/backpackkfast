@@ -206,7 +206,7 @@ class place(retrieveplace):
                 self.result["museum"] = res
             elif place == "night_club" or place =="bar":
                 res = await self.nightlife(place)
-                self.result["night_life"] = res
+                self.result[f'{place}'] = res
             elif place == "hindu_temple" or place == "mosque" or place == "church":
                 res = await self.religious(place)
                 self.result[f"{place}"] = res
