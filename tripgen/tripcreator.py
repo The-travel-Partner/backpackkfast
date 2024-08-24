@@ -214,18 +214,17 @@ class TripCreator:
         df_distances = compute_distance_matrix(df_sorted)
         print(df_distances)
 
-        def divide_places(n):
-            sorted_df = df_sorted.sort_values(by=['weighted_avg'], ascending=False)
+        def divide_places(n, data, df_distances):
+            sorted_df = data.sort_values(by='weighted_avg', ascending=False)
 
             total_places = len(sorted_df)
-            places_per_day = min(total_places // n, 4)  # per day maximum 4 place
-            remaining_places = total_places % n
+            places_per_day = min(total_places // n, 4)  # Maximum 4 places per day
 
             days = []
             for i in range(n):
                 day = pd.DataFrame()
                 current_location = None
-                for j in range(places_per_day + (1 if i < remaining_places else 0)):
+                for j in range(places_per_day):
                     if len(sorted_df) == 0:
                         break
                     if current_location is None:
@@ -235,23 +234,23 @@ class TripCreator:
                         current_location = next_location
                     else:
                         distances = df_distances.loc[current_location.name]
-                        for index in distances.sort_values().index:
-                            if index != current_location.name and index in sorted_df.index:
-                                next_location = sorted_df.loc[index]
-                                day = pd.concat([day, next_location.to_frame().T], ignore_index=True)
-                                sorted_df = sorted_df.drop(next_location.name)
-                                current_location = next_location
-                                break
-                days.append(day)
+                        combined_scores = distances[sorted_df.index].rank(ascending=True) + \
+                                        sorted_df['weighted_avg'].rank(ascending=False)
+                        best_index = combined_scores.idxmin()
+                        next_location = sorted_df.loc[best_index]
+                        day = pd.concat([day, next_location.to_frame().T], ignore_index=True)
+                        sorted_df = sorted_df.drop(next_location.name)
+                        current_location = next_location
 
+                days.append(day)
             return days
 
-        days = divide_places(n)
+        days = divide_places(n, data, df_distances)
         day_wise = {}
-        for i, day in enumerate(days):
-            print(f"Day {i + 1}:")
-            day_wise[f"Day {i + 1}:"] = json.loads(day.to_json())
-            print(day.to_json())
-            print(day)
-            print()
+        for i, day in enumerate(days,1):
+                print(f"Day {i}:")
+                day_wise[f"Day {i}:"] = json.loads(day.to_json())
+                print(day.to_json())
+                print(day)
+                print()
         return day_wise
