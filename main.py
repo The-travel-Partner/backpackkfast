@@ -58,7 +58,8 @@ origins = [
     "http://localhost:4173/login",
     "backpackksveltekit-76dfccaa6eb3.herokuapp.com",
     "https://backpackk-cloud.el.r.appspot.com",
-    "backpackk-cloud.el.r.appspot.com"
+    "backpackk-cloud.el.r.appspot.com",
+    "*"
 ]
 app.add_middleware(
 
