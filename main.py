@@ -61,8 +61,14 @@ origins = [
     "backpackk-cloud.el.r.appspot.com",
     "*"
 ]
-
 app.add_middleware(
+
+    SessionMiddleware,
+    secret_key=SECRET_KEY,
+
+)
+app.add_middleware(
+
     CORSMiddleware,
     allow_origins=origins,
     allow_credentials=True,
@@ -83,6 +89,16 @@ async def root():
 @app.get("/hello/{name}")
 async def say_hello(name: str):
     return {"message": f"Hello {name}"}
+
+
+app.add_middleware(
+
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"]
+)
 
 
 @app.post("/token", response_model=auth.Token)
@@ -106,6 +122,16 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
 
 def generate_verification_token(length=6):
     return ''.join(random.choices(string.ascii_letters + string.digits, k=length))
+
+
+app.add_middleware(
+
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"]
+)
 
 
 def send_verification_email(user_email, token, user_id):
@@ -132,6 +158,16 @@ def send_verification_email(user_email, token, user_id):
         print("Verification email sent successfully!")
     except Exception as e:
         print(f"Failed to send email: {str(e)}")
+
+
+app.add_middleware(
+
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"]
+)
 
 
 @app.post("/register")
