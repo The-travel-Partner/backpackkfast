@@ -53,7 +53,12 @@ origins = [
     "http://localhost:5173/login",
     'https://backpackk.com/',
     'https://backpackk.com/signup',
-    'https://backpackk.com/,login'
+    'https://backpackk.com/login',
+"http://localhost:4173",
+    "localhost:4173",
+    "http://localhost:4173/signup",
+    "http://localhost:4173/login",
+    "https://backpackksveltekit-76dfccaa6eb3.herokuapp.com/"
 ]
 app.add_middleware(
 
@@ -63,7 +68,7 @@ app.add_middleware(
 )
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=['*'],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"]
