@@ -46,7 +46,28 @@ auth = authenticate(secretkey=SECRET_KEY, algorithm=ALGORITHM, usercollection=us
 
 
 app = FastAPI()
+origins = [
+    "http://localhost:5173",
+    "localhost:5173",
+    "http://localhost:5173/signup",
+    "http://localhost:5173/login",
+    'https://backpackk.com/',
+    'https://backpackk.com/signup',
+    'https://backpackk.com/,login'
+]
+app.add_middleware(
 
+    SessionMiddleware,
+    secret_key=SECRET_KEY,
+
+)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=['*'],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"]
+)
 
 async def current_active_user_dependency(current_user: auth.UserInDB = Depends(auth.get_current_user)):
     return await auth.get_current_active_user(current_user)
@@ -187,28 +208,7 @@ async def find_or_create_user(email, first_name, last_name='nil'):
 
 
 secret_key = os.getenv("SESSION_SECRET_KEY", "default_fallback_secret_key")
-origins = [
-    "http://localhost:5173",
-    "localhost:5173",
-    "http://localhost:5173/signup",
-    "http://localhost:5173/login",
-    'https://backpackk.com/',
-    'https://backpackk.com/signup',
-    'https://backpackk.com/,login'
-]
-app.add_middleware(
 
-    SessionMiddleware,
-    secret_key=SECRET_KEY,
-
-)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"]
-)
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import RedirectResponse
