@@ -92,7 +92,7 @@ def send_verification_email(user_email, token, user_id):
     receiver_email = user_email
 
     subject = "Email Verification"
-    body = f"Please verify your email by clicking on the following link: http://localhost:8000/verify/{user_id}/{token}"
+    body = f"Please verify your email by clicking on the following link: https://backpackkfast-fcvonqkgya-el.a.run.app/verify/{user_id}/{token}"
 
     message = MIMEMultipart()
     message["From"] = sender_email
@@ -191,7 +191,10 @@ origins = [
     "http://localhost:5173",
     "localhost:5173",
     "http://localhost:5173/signup",
-    "http://localhost:5173/login"
+    "http://localhost:5173/login",
+    'https://backpackk.com/',
+    'https://backpackk.com/signup',
+    'https://backpackk.com/,login'
 ]
 app.add_middleware(
 
@@ -223,7 +226,7 @@ async def google_auth(request: Request):
     google_auth_url = (
         f"https://accounts.google.com/o/oauth2/v2/auth?"
         f"response_type=code&client_id=794713488480-8iqh9m6p3a93clvqrfrdjakt8q22movg.apps.googleusercontent.com&"
-        f"redirect_uri=http://127.0.0.1:8000/callback&scope=openid%20email%20profile"
+        f"redirect_uri=https://backpackkfast-fcvonqkgya-el.a.run.app/callback&scope=openid%20email%20profile"
     )
     return RedirectResponse(url=google_auth_url)
 
@@ -248,7 +251,7 @@ async def google_callback(code: str):
             "code": code,
             "client_id": "794713488480-8iqh9m6p3a93clvqrfrdjakt8q22movg.apps.googleusercontent.com",
             "client_secret": "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",
-            "redirect_uri": "http://127.0.0.1:8000/callback",
+            "redirect_uri": "https://backpackkfast-fcvonqkgya-el.a.run.app/callback",
             "grant_type": "authorization_code",
         }
 
@@ -275,7 +278,7 @@ async def google_callback(code: str):
         else:
             user = await find_or_create_user(email, first_name)
         temp_token = generate_temp_token(email)
-        response = RedirectResponse(f'http://localhost:5173/intermediate?token={temp_token}')
+        response = RedirectResponse(f'https://backpackk.com/intermediate?token={temp_token}')
         return response
 
 
@@ -315,7 +318,7 @@ def send_reset_email(email: str, token: str):
     receiver_email = email
 
     subject = "Password Reset Request"
-    reset_link = f"http://localhost:8000/reset-password?token={token}"
+    reset_link = f"https://backpackkfast-fcvonqkgya-el.a.run.app/reset-password?token={token}"
     body = f"Please click on the following link to reset your password: {reset_link}"
 
     message = MIMEMultipart()
@@ -367,7 +370,7 @@ async def reset_password(token: str):
     email = payload.get("email")
     if not email:
         raise HTTPException(status_code=404, detail="Invalid token.")
-    response = RedirectResponse(f'http://localhost:5173/resetpassword?token={token}')
+    response = RedirectResponse(f'https://backpackk.com/resetpassword?token={token}')
     return response
 @app.post("/reset-password")
 async def reset_password(param:resetpass):
