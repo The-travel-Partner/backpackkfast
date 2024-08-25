@@ -47,10 +47,7 @@ auth = authenticate(secretkey=SECRET_KEY, algorithm=ALGORITHM, usercollection=us
 
 app = FastAPI()
 origins = [
-    "http://localhost:5173",
-    "localhost:5173",
-    "http://localhost:5173/signup",
-    "http://localhost:5173/login",
+
     'https://backpackk.com/',
     'https://backpackk.com/signup',
     'https://backpackk.com/login',
