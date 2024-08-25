@@ -61,12 +61,7 @@ origins = [
     "backpackk-cloud.el.r.appspot.com",
     "*"
 ]
-app.add_middleware(
 
-    SessionMiddleware,
-    secret_key=SECRET_KEY,
-
-)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
