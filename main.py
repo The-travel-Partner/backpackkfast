@@ -94,7 +94,7 @@ async def say_hello(name: str):
 app.add_middleware(
 
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"]
@@ -117,8 +117,8 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
     access_token = auth.create_access_token(
         data={"sub": user.email}, expires_delta=access_token_expires
     )
-    response = JSONResponse({"access_token": access_token, "token_type": "bearer", "first_name": name})
-    response.headers["Access-Control-Allow-Origin"] = "https://backpackk.com"
+    response = JSONResponse()
+    response.headers["Access-Control-Allow-Origin"] = "https://backpackkfast-fcvonqkgya-el.a.run.app"
     return response
 
 
