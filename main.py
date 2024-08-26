@@ -61,7 +61,6 @@ origins = [
     "backpackk-cloud.el.r.appspot.com",
     "*"
 ]
-
 app.add_middleware(
 
     CORSMiddleware,
@@ -69,8 +68,13 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-    secret_key=SECRET_KEY,
+
 )
+app.add_middleware(
+    SessionMiddleware,
+secret_key=SECRET_KEY,
+)
+
 
 async def current_active_user_dependency(current_user: auth.UserInDB = Depends(auth.get_current_user)):
     return await auth.get_current_active_user(current_user)
