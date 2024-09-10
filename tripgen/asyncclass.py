@@ -1,7 +1,7 @@
 import asyncio
 import json
 import random
-
+import copy
 import aiohttp.client
 from unidecode import unidecode
 
@@ -40,7 +40,7 @@ class retrieveplace:
         }
 
         datas = []
-        for i in range(15):
+        for i in range(8):
             lat = random.uniform(self.southwest[0], self.northeast[0])
             lng = random.uniform(self.southwest[1], self.northeast[1])
 
@@ -84,7 +84,7 @@ class retrieveplace:
                 tasks.append(task)
             results = await asyncio.gather(*tasks)
             for placetourist in results[0]['places']:
-
+                j =[]
                 if placetourist.get("photos") is not None and placetourist.get("rating") is not None:
                     name = placetourist['displayName']['text']
                     lat = placetourist['location']['latitude']
@@ -93,8 +93,10 @@ class retrieveplace:
                     number = placetourist['userRatingCount']
                     place_id = placetourist['id']
                     photos = placetourist['photos']
+                    for photo in photos:
+                        j.append(photo['name'])
                     res = {'name': name, 'lat': lat, 'lng': lng, 'rating': rating, 'number': number,
-                           'place_id': place_id, 'type': placetype, 'photos': photos}
+                           'place_id': place_id, 'type': placetype, 'photos': j}
                     self.resulttourist[f'{name}'] = res
             await session.close()
             return self.resulttourist
@@ -107,7 +109,7 @@ class retrieveplace:
         }
         urlelse = "https://places.googleapis.com/v1/places:searchNearby"
         dataselse = []
-        for i in range(1):
+        for i in range(5):
             lat = random.uniform(self.southwest[0], self.northeast[0])
             lng = random.uniform(self.southwest[1], self.northeast[1])
 
@@ -134,7 +136,7 @@ class retrieveplace:
             for placeother in results[0]['places']:
 
                 if placeother.get("photos") is not None and placeother.get("rating") is not None:
-
+                    j=[]
                     name = placeother['displayName']['text']
                     lat = placeother['location']['latitude']
                     lng = placeother['location']['longitude']
@@ -142,8 +144,11 @@ class retrieveplace:
                     number = placeother['userRatingCount']
                     place_id = placeother['id']
                     photos = placeother['photos']
+                    for photo in photos:
+
+                        j.append(photo['name'])
                     resother = {'name': name, 'lat': lat, 'lng': lng, 'rating': rating, 'number': number,
-                           'place_id': place_id, 'type': placetype, 'photos': photos}
+                           'place_id': place_id, 'type': placetype, 'photos': j}
 
                     self.resultother[f'{name}'] = resother
             return self.resultother
@@ -199,20 +204,43 @@ class place(retrieveplace):
             if place == "tourist_attraction":
                 print("hello")
                 res = await self.touristattraction()
+                self.tourist = copy.deepcopy(res)
+                for i in self.tourist:
+
+                    if res[i]['type'] != "tourist_attraction":
+                        res.pop(i)
 
                 self.result['tourist_attraction'] = res
             elif place == "museum":
                 res = await self.museums()
+                self.museum = copy.deepcopy(res)
+                for i in self.museum:
+                    if res[i]['type'] != "museum":
+                        res.pop(i)
                 self.result["museum"] = res
-            elif place == "night_club" or place =="bar":
+            elif place == "night_club" or place == "bar":
                 res = await self.nightlife(place)
+                self.night_life = copy.deepcopy(res)
+                for i in self.night_life:
+                    if res[i]['type'] != place:
+                        res.pop(i)
                 self.result[f'{place}'] = res
             elif place == "hindu_temple" or place == "mosque" or place == "church":
+
                 res = await self.religious(place)
+                self.religiousplace = copy.deepcopy(res)
+                for i in self.religiousplace:
+                    if res[i]['type'] != place:
+                        res.pop(i)
                 self.result[f"{place}"] = res
             elif place == "zoo":
                 res = await self.zoos()
+                self.zoo = copy.deepcopy(res)
+                for i in self.zoo:
+                    if res[i]['type'] != "zoo":
+                        res.pop(i)
                 self.result[f"{place}"] = res
+
         return self.result
 
 
