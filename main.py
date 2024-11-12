@@ -509,6 +509,7 @@ async def autocomplete_city_name(query: str = Query(..., min_length=1, descripti
     params = {
         "input": query,
         "types": "(cities)",
+        "components": f"country:IN",  # Restrict results to a specific country
         "key": GOOGLE_API_KEY,
     }
     print('hello')
@@ -521,6 +522,13 @@ async def autocomplete_city_name(query: str = Query(..., min_length=1, descripti
     response.headers["Access-Control-Allow-Origin"] = origin_url
     return response
 
+@app.post("/number/of/available/days")
+async def numberofdays(param: tripgenModel, request: Request,
+                    current_user: auth.UserInDB = Depends(current_active_user_dependency)):
+    city_name = param.city_name
+    place_types = param.place_types
+
+    return {}
 
 @app.get("/getphoto")
 async def get_photo(name: str, request: Request, current_user: auth.UserInDB = Depends(current_active_user_dependency)):
@@ -532,13 +540,13 @@ async def get_photo(name: str, request: Request, current_user: auth.UserInDB = D
             print("Client disconnected during step 3.")
             return {"status": "Process stopped"}
         photo_response = requests.get(photo_url)
-        final_photo_url = photo_response.json()['photoUri']
-        final = requests.get(final_photo_url)
-        print(final.content)
-        if photo_response.status_code != 200:
-            raise HTTPException(status_code=photo_response.status_code, detail="Failed to retrieve photo.")
-
-        image = Image.open(BytesIO(final.content))
+        print(photo_response.text)
+        if photo_response.headers.get('Content-Type') == 'application/json':
+            final_photo_url = photo_response.json()['photoUri']
+            final = requests.get(final_photo_url)
+            image = Image.open(BytesIO(final.content))
+        else:
+            image = Image.open(BytesIO(photo_response.content))
         img_byte_arr = BytesIO()
         image.save(img_byte_arr, format='JPEG')
         img_byte_arr = img_byte_arr.getvalue()

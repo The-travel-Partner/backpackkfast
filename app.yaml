@@ -1,6 +1,15 @@
-runtime: python39  # Or the appropriate Python runtime version
-entrypoint: uvicorn main:app --host 0.0.0.0 --port 8080
+runtime: python39  # Python 3.9 runtime
+entrypoint: gunicorn -w 8 -k uvicorn.workers.UvicornWorker main:app  # Adjust worker count based on your CPU
 
-handlers:
-  - url: /.*
-    script: auto
+# Optional: Instance class and scaling
+instance_class: F2  # Choose a higher instance class if needed
+automatic_scaling:
+  target_cpu_utilization: 0.7
+  min_instances: 1
+  max_instances: 10
+
+
+
+# Environment variables
+env_variables:
+  ENV: "production"

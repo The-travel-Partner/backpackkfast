@@ -105,7 +105,7 @@ class retrieveplace:
         headerselse = {
             "Content-Type": "application/json",
             "X-Goog-Api-Key": "AIzaSyAt9_35pEEtevoHJCTeJwynPqjx-9-MVjk",
-            "X-Goog-FieldMask": "places.id,places.location,places.rating,places.userRatingCount,places.editorialSummary,places.types,places.photos,places.displayName",
+            "X-Goog-FieldMask": "places.id,places.location,places.rating,places.userRatingCount,places.types,places.photos,places.displayName",
         }
         urlelse = "https://places.googleapis.com/v1/places:searchNearby"
         dataselse = []
