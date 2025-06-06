@@ -1,0 +1,30 @@
+# .gcloudignore
+
+# Ignore the virtual environment if it exists
+.venv/
+env/
+__pycache__/
+
+# Ignore compiled Python files
+*.pyo
+*.pyd
+
+# Ignore logs and other temporary files
+*.log
+*.sqlite3
+*.lock
+*.csv
+*.txt
+*.json
+
+# Ignore test files
+tests/
+__tests__/
+
+# Ignore node_modules or other frontend build files if present
+node_modules/
+build/
+dist/
+
+# Ignore Git repository files
+.git/

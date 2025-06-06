@@ -105,7 +105,7 @@ class TripCreator:
                     google_search_retrieval=generative_models.grounding.GoogleSearchRetrieval(disable_attribution=False)
                 ),
             ]
-
+        
             textsi_1 = """
                    give me the response in json style like this
     
