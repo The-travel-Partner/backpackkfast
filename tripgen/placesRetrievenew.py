@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 
 from py_olamaps.OlaMaps import OlaMaps
 import googlemaps
-from google import genai
+
 from google.genai import types
 import base64
 from googlemaps.distance_matrix import distance_matrix
