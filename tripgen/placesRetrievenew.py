@@ -167,7 +167,7 @@ class placesRetrieve:
                         dist.append(distance)
 
         df_sorted['distance'] = dist
-        df_sorted['path'] = poly
+        
         df_sorted.to_csv('df_sorted.csv', index=False)
         return df_sorted,placesdata
 

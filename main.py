@@ -656,7 +656,7 @@ async def getplaces(param: getplacesModel, request: Request,current_user: auth.U
        else:
            print("⚠️ Failed to cache places data in Redis - continuing without cache")
        
-       print(json.dumps(bestPlacesModel.modelData, indent=4))
+
        response = JSONResponse({"Places":"True"})
        response.headers["Access-Control-Allow-Origin"] = origin_url
        return response
@@ -704,7 +704,7 @@ async def getplaces(cityname: str, current_user: auth.UserInDB = Depends(current
         else:
             result = json.dumps(city['places'])
         final = {"email": current_user.email, "places": json.loads(result)}
-        print(final)
+ 
 
         # Try to cache data in Redis, continue even if Redis is unavailable
         cache_success = redisClient.setex(current_user.email, 3600, json.dumps(final))
