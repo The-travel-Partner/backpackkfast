@@ -89,19 +89,7 @@ class TripCreator:
         
             return places, food, night_life
 
-        def is_subslot_available(main_start, main_end, sub_start, sub_end):
 
-            # Convert time strings to datetime objects
-            main_start_time = datetime.strptime(main_start, "%I:%M%p")
-            main_end_time = datetime.strptime(main_end, "%I:%M%p")
-            sub_start_time = datetime.strptime(sub_start, "%H:%M")
-            sub_end_time = datetime.strptime(sub_end, "%H:%M")
-
-            # Check if the sub-slot is within the main time range
-            if (main_start_time <= sub_start_time and sub_end_time <= main_end_time):
-                return True
-            else:
-                return False
 
         def next_day(current_day):
             # List of days in order
@@ -183,35 +171,6 @@ class TripCreator:
                 current_remainingplaces = copy.deepcopy(remaining_places)
                 current_food = copy.deepcopy(food)
                 current_night = copy.deepcopy(night_life)
-                for curplace in current_remainingplaces[:]:  # Create a copy of the list to iterate
-                    if not curplace['opening_hours']:  # Check if opening hours is empty
-                        current_remainingplaces.remove(curplace)
-                        continue
-                        
-                    for opening in curplace['opening_hours']:
-                        if weekday in opening:
-                            if "Closed" in str(opening):
-                                current_remainingplaces.remove(curplace)
-                print("before",len(current_food))
-                for restro in current_food[:]:  # Create a copy of the list to iterate
-                    if not restro['opening_hours']:  # Check if opening hours is empty
-                        current_food.remove(restro)
-                        continue
-                        
-                    for opening in restro['opening_hours']:
-                        if weekday in opening:
-                            if 'Closed' in str(opening):
-                                current_food.remove(restro)
-                print("after",len(current_food))
-                for night in current_night[:]:  # Create a copy of the list to iterate
-                    if not night['opening_hours']:  # Check if opening hours is empty
-                        current_night.remove(night)
-                        continue
-                        
-                    for opening in night['opening_hours']:
-                        if weekday in str(opening):
-                            if 'Closed' in weekday:
-                                current_night.remove(night)
 
 
                 day_places = []
@@ -232,150 +191,102 @@ class TripCreator:
                         heapq.heapify(pq)
 
                         _, _, best_place = heapq.heappop(pq)
-                        current_weekday = [element for element in best_place['opening_hours'] if weekday in element]
-                        if current_weekday:
-                                # Replace Unicode spaces with regular spaces
-                                cleaned_weekday = current_weekday[0].replace('\u202f', ' ').replace('\u2009', ' ')
-                                # Replace the en dash with a regular hyphen
-                                cleaned_weekday = cleaned_weekday.replace('–', '-')
-                                current_weekday = [cleaned_weekday]
-                                print(f"Cleaned weekday: {current_weekday}")
-                        fin = current_weekday[0].replace(" ","")
-                        time_pattern = r'(\d{1,2}:\d{2}(?:AM|PM)|\d{1,2}:\d{2})-(\d{1,2}:\d{2}(?:AM|PM)|\d{1,2}:\d{2})'
-                        match = False
-                        matches = re.findall(time_pattern, fin)
-                        print("start and end",matches)
-                        main_start=""
-                        main_end =""
-                        for start_time, end_time in matches:
 
-                            if (("AM" in start_time or "PM" in start_time) and (
-                                    "AM" in end_time or "PM" in end_time)):
-                                match = True
-                                main_start = start_time
-                                main_end = end_time
-                            elif 'Open' in fin:
-                                match = True
-                                main_start = "00:00"
-                                main_end = "23:59"
-                            else:
-                                match = False
+                        if ((travel_schedule == "Leisure" and i == 0) or (
+                                travel_schedule == "Leisure" and i == 2)):
+                            if i == 0:
+
+                                food_score = [(calculate_score(restro, current_distance), idx, restro) for idx, restro in enumerate(current_food)]
+                                heapq.heapify(food_score)
+                                _, _, best_food = heapq.heappop(food_score)
+                                lunch_restro.append(best_food)
+                                current_food.remove(best_food)
+                                food.remove(best_food)
+                            elif i == 2:
+
+                                food_score = [(calculate_score(restro, current_distance), idx, restro) for idx, restro in enumerate(current_food)]
+                                heapq.heapify(food_score)
+                                _, _, best_food = heapq.heappop(food_score)
+                                dinner_restro.append(best_food)
+                                current_distance = best_food['distance']
+                                if 'night_club' in place_types or 'bar' in place_types:
+                                    night_score = [(calculate_score(night, current_distance), idx, night) for idx, night in enumerate(current_night)]
+                                    heapq.heapify(night_score)
+                                    _, _, best_night = heapq.heappop(night_score)
+                                    night.append(best_night)
+                                    current_night.remove(best_night)
+                                    night_life.remove(best_night)
+                                current_food.remove(best_food)
+                                food.remove(best_food)
+
+                        elif ((travel_schedule == "Explorer" and i == 1) or (
+                                travel_schedule == "Explorer" and i == 3)):
+                            if i == 1:
+
+                                food_score = [(calculate_score(restro, current_distance), idx, restro) for idx, restro in enumerate(current_food)]
+                                heapq.heapify(food_score)
+                                _, _, best_food = heapq.heappop(food_score)
+
+                                lunch_restro.append(best_food)
+                                current_food.remove(best_food)
+                                food.remove(best_food)
+                            elif i == 3:
+
+                                food_score = [(calculate_score(restro, current_distance), idx, restro) for idx, restro in enumerate(current_food)]
+                                heapq.heapify(food_score)
+                                _, _, best_food = heapq.heappop(food_score)
+
+                                dinner_restro.append(best_food)
+                                current_distance = best_food['distance']
+                                if ('night_club' in place_types) or ('bar' in place_types):
+                                    night_score = [(calculate_score(night, current_distance), idx, night) for idx, night in enumerate(current_night)]
+                                    heapq.heapify(night_score)
+                                    _, _, best_night = heapq.heappop(night_score)
+                                    night.append(best_night)
+                                    current_night.remove(best_night)
+                                    night_life.remove(best_night)
+                                current_food.remove(best_food)
+                                food.remove(best_food)
+
+                        elif ((travel_schedule == "Adventurer" and i == 1) or (
+                                travel_schedule == "Adventurer" and i == 4)):
+                            if i == 1:
+
+                                food_score = [(calculate_score(restro, current_distance), idx, restro) for idx, restro in enumerate(current_food)]
+                                heapq.heapify(food_score)
+                                _, _, best_food = heapq.heappop(food_score)
+
+                                lunch_restro.append(best_food)
+                                current_food.remove(best_food)
+                                food.remove(best_food)
+                            elif i == 4:
+
+                                food_score = [(calculate_score(restro, current_distance), idx, restro) for idx, restro in enumerate(current_food)]
+                                heapq.heapify(food_score)
+                                _, _, best_food = heapq.heappop(food_score)
+
+                                dinner_restro.append(best_food)
+                                current_distance = best_food['distance']
+                                if 'night_club' in place_types or 'bar' in place_types:
+                                    night_score = [(calculate_score(night, current_distance), idx, night) for idx, night in enumerate(current_night)]
+                                    heapq.heapify(night_score)
+                                    _, _, best_night = heapq.heappop(night_score)
+                                    night.append(best_night)
+                                    current_night.remove(best_night)
+                                    night_life.remove(best_night)
+                                current_food.remove(best_food)
+                                food.remove(best_food)
+
+                        day_places.append(best_place)
                         
-                        print(match)
+                        if best_place in current_remainingplaces:
+                            current_remainingplaces.remove(best_place)
+                        if best_place in remaining_places:
+                            remaining_places.remove(best_place)
+                        current_distance = best_place['distance']
 
-                        if match:
-
-
-
-                            sub_start = slots[i].split("-")[0]
-                            sub_end = slots[i].split("-")[1]
-                            res = is_subslot_available(main_start=main_start, main_end=main_end, sub_start=sub_start,
-                                                        sub_end=sub_end)
-                            print("result",res)
-                            if res:
-
-                                if ((travel_schedule == "Leisure" and i == 0) or (
-                                        travel_schedule == "Leisure" and i == 2)):
-                                    if i == 0:
-
-                                        food_score = [(calculate_score(restro, current_distance), idx, restro) for idx, restro in enumerate(current_food)]
-                                        heapq.heapify(food_score)
-                                        _, _, best_food = heapq.heappop(food_score)
-                                        lunch_restro.append(best_food)
-                                        current_food.remove(best_food)
-                                        food.remove(best_food)
-                                    elif i == 2:
-
-                                        food_score = [(calculate_score(restro, current_distance), idx, restro) for idx, restro in enumerate(current_food)]
-                                        heapq.heapify(food_score)
-                                        _, _, best_food = heapq.heappop(food_score)
-                                        dinner_restro.append(best_food)
-                                        current_distance = best_food['distance']
-                                        if 'night_club' in place_types or 'bar' in place_types:
-                                            night_score = [(calculate_score(night, current_distance), idx, night) for idx, night in enumerate(current_night)]
-                                            heapq.heapify(night_score)
-                                            _, _, best_night = heapq.heappop(night_score)
-                                            night.append(best_night)
-                                            current_night.remove(best_night)
-                                            night_life.remove(best_night)
-                                        current_food.remove(best_food)
-                                        food.remove(best_food)
-
-                                elif ((travel_schedule == "Explorer" and i == 1) or (
-                                        travel_schedule == "Explorer" and i == 3)):
-                                    if i == 1:
-
-                                        food_score = [(calculate_score(restro, current_distance), idx, restro) for idx, restro in enumerate(current_food)]
-                                        heapq.heapify(food_score)
-                                        _, _, best_food = heapq.heappop(food_score)
-
-                                        lunch_restro.append(best_food)
-                                        current_food.remove(best_food)
-                                        food.remove(best_food)
-                                    elif i == 3:
-
-                                        food_score = [(calculate_score(restro, current_distance), idx, restro) for idx, restro in enumerate(current_food)]
-                                        heapq.heapify(food_score)
-                                        _, _, best_food = heapq.heappop(food_score)
-
-                                        dinner_restro.append(best_food)
-                                        current_distance = best_food['distance']
-                                        if ('night_club' in place_types) or ('bar' in place_types):
-                                            night_score = [(calculate_score(night, current_distance), idx, night) for idx, night in enumerate(current_night)]
-                                            heapq.heapify(night_score)
-                                            _, _, best_night = heapq.heappop(night_score)
-                                            night.append(best_night)
-                                            current_night.remove(best_night)
-                                            night_life.remove(best_night)
-                                        current_food.remove(best_food)
-                                        food.remove(best_food)
-
-                                elif ((travel_schedule == "Adventurer" and i == 1) or (
-                                        travel_schedule == "Adventurer" and i == 4)):
-                                    if i == 1:
-
-                                        food_score = [(calculate_score(restro, current_distance), idx, restro) for idx, restro in enumerate(current_food)]
-                                        heapq.heapify(food_score)
-                                        _, _, best_food = heapq.heappop(food_score)
-
-                                        lunch_restro.append(best_food)
-                                        current_food.remove(best_food)
-                                        food.remove(best_food)
-                                    elif i == 4:
-
-                                        food_score = [(calculate_score(restro, current_distance), idx, restro) for idx, restro in enumerate(current_food)]
-                                        heapq.heapify(food_score)
-                                        _, _, best_food = heapq.heappop(food_score)
-
-                                        dinner_restro.append(best_food)
-                                        current_distance = best_food['distance']
-                                        if 'night_club' in place_types or 'bar' in place_types:
-                                            night_score = [(calculate_score(night, current_distance), idx, night) for idx, night in enumerate(current_night)]
-                                            heapq.heapify(night_score)
-                                            _, _, best_night = heapq.heappop(night_score)
-                                            night.append(best_night)
-                                            current_night.remove(best_night)
-                                            night_life.remove(best_night)
-                                        current_food.remove(best_food)
-                                        food.remove(best_food)
-
-                                day_places.append(best_place)
-                                
-                                if best_place in current_remainingplaces:
-                                    current_remainingplaces.remove(best_place)
-                                if best_place in remaining_places:
-                                    remaining_places.remove(best_place)
-                                current_distance = best_place['distance']
-
-                                for j in range(len(useless)):
-                                    current_remainingplaces.append(useless[j])
-
-                            else:
-                                if best_place in current_remainingplaces:
-                                    current_remainingplaces.remove(best_place)
-                        else:
-                            if best_place in current_remainingplaces:
-                                    current_remainingplaces.remove(best_place)
+                        for j in range(len(useless)):
+                            current_remainingplaces.append(useless[j])
                 except Exception as e:
                     print(e)
                     return int(day) - 2
