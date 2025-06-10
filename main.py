@@ -657,7 +657,7 @@ async def getplaces(param: getplacesModel, request: Request,current_user: auth.U
            print("⚠️ Failed to cache places data in Redis - continuing without cache")
        
 
-       response = JSONResponse({"Places":"True"})
+       response = JSONResponse(content=final['places'], status_code=200)
        response.headers["Access-Control-Allow-Origin"] = origin_url
        return response
 
@@ -777,9 +777,12 @@ async def getPhotosByPlaceId(param: getPhotosByPlaceId):
     
     # Access the images collection
     images_collection = client.backpackk.images
-    
+    places = client.backpackk.places
     # Find all images for the given place_id
     cursor = images_collection.find({"place_id": place_id})
+
+        
+    
     images = await cursor.to_list(length=None)
     
     # Format the response
@@ -793,6 +796,9 @@ async def getPhotosByPlaceId(param: getPhotosByPlaceId):
     print(f"Found {len(base64_images)} images for place_id: {place_id}")
     response = JSONResponse({"images": base64_images})
     return response
+
+
+
 
 @app.post("/contactus")
 async def contactus(param: contactModel):
@@ -1011,8 +1017,8 @@ map_data = {
     ]
 }
 
-@app.get('/lasttrip')
-async def get_feed(current_user: auth.UserInDB = Depends(current_active_user_dependency)):
+@app.get('/gettrips')
+async def get_feed(all: bool = False,current_user: auth.UserInDB = Depends(current_active_user_dependency)):
     if current_user:
         collection = db['user_trips']
         print(current_user.email)
@@ -1020,17 +1026,13 @@ async def get_feed(current_user: auth.UserInDB = Depends(current_active_user_dep
         if not user:
             return {"error": "User not found or no trips created."}
         trips = user.get("trips")
-        print(trips[-1])
         if trips:
-            # Retrieve the last trip added
-            last_trip = trips[-1]
-
-
-
-            return JSONResponse(content=last_trip, status_code=200)
+            if all:
+                return JSONResponse(content=trips, status_code=200)
+            else:
+                return JSONResponse(content=trips[-3:][::-1], status_code=200)
         else:
             return {"error": "No trips available for this user."}
-
 
 
 import aiohttp
@@ -1416,7 +1418,14 @@ async def get_nearby_places(params: NearbyPlacesRequest,
         raise HTTPException(status_code=500, detail=f"Error fetching nearby places: {str(e)}")
         
 
-
+app.get('cityplaces')
+async def get_city_places(cityname:str, current_user: auth.UserInDB = Depends(current_active_user_dependency)):
+    try:
+        places_collection = client.backpackk.places
+        places = await places_collection.find({"city": cityname}).to_list(length=100)
+        return places
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching city places: {str(e)}")
 
 
     
