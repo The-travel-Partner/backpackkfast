@@ -1077,118 +1077,116 @@ class PlaceDetailsRequest(BaseModel):
 @app.post("/place")
 async def get_place_details(params: PlaceDetailsRequest,
                           current_user: auth.UserInDB = Depends(current_active_user_dependency)):
-    try:
-        # Access MongoDB collections
-        places_collection = db['places']  # Changed to places folder
-        images_collection = db['images']  # Changed to images folder
-        
-        # Check if place exists in MongoDB
-        existing_place = await places_collection.find_one({"place_id": params.place_id})
-        
-        if existing_place:
-            # Remove _id field
-            existing_place.pop('_id', None)
-            
-            # Get the associated image from images collection
-            if params.include_photos:
-                existing_place["photos"] = [] # Initialize as list
-                image_cursor = images_collection.find({"place_id": params.place_id})
-                async for image_doc in image_cursor:
-                    image_doc.pop('_id', None)
-                    existing_place["photos"].append({
-                        "image": image_doc["image"],
-                        "content_type": image_doc["content_type"]
-                    })
-            else:
-                existing_place["photos"] = []
-            
-            # Return existing place data
-            print(existing_place)
-            if existing_place.get("timestamp"):
-                existing_place["timestamp"] = existing_place["timestamp"].isoformat()
-            return JSONResponse(content=existing_place)
-        
-        # If place doesn't exist, fetch it
-        headers = {
-            "Content-Type": "application/json",
-            "X-Goog-Api-Key": apikey,
-            "X-Goog-FieldMask": "places.id,places.displayName,places.location,places.rating,places.userRatingCount,places.photos,places.types,places.formattedAddress"
-        }
-        
-        # Fetch the specific place details
-        place_url = f"https://places.googleapis.com/v1/places/{params.place_id}"
-        async with aiohttp.ClientSession() as session:
-            async with session.get(place_url, headers=headers) as response:
-                place_response = await response.json()
-                
-                if "error" in place_response:
-                    raise HTTPException(status_code=404, detail="Place not found")
-                
-                # Process and store the place
-                place = place_response
-                name = place.get("displayName", {}).get("text", "")
-                location = place.get("location", {})
-                rating = place.get("rating")
-                vicinity = place.get("formattedAddress")
-                
-                # Get photo references if they exist
-                photo_refs = []
-                if "photos" in place:
-                    for photo in place["photos"]:
-                        photo_ref = photo.get("name")
-                        if photo_ref:
-                            photo_refs.append(photo_ref)
-                
-                # Initialize location photos list
-                location_photos = []
-                
-                # If photos are requested, fetch them
-                if params.include_photos and photo_refs:
-                    photos_retriever = RetrievePhotos(photo_refs, params.place_id) # Pass all refs
-                    photo_responses = await photos_retriever.get_photos()
-                    
-                    for photo_resp_item in photo_responses: # Iterate through all responses
-                        if photo_resp_item is not None and hasattr(photo_resp_item, 'body'):
-                            # Store image in images collection
-                            image_doc_content = base64.b64encode(photo_resp_item.body).decode('utf-8')
-                            image_doc = {
-                                "place_id": params.place_id,
-                                "image": image_doc_content,
-                                "content_type": "image/jpeg", # Assuming JPEG, adjust if necessary
-                                "timestamp": datetime.now().isoformat() # Store as ISO string
-                            }
-                            # Check if this specific image (by content or a unique photo_ref part) already exists to avoid duplicates
-                            # This part might need more sophisticated handling if Google's photo_refs are not unique enough for direct use
-                            # For now, we'll insert, but duplicate image data might occur if not handled.
-                            await images_collection.insert_one(image_doc)
-                            
-                            location_photos.append({
-                                "image": image_doc_content,
-                                "content_type": image_doc["content_type"]
-                            })
-                
-                # Store place in places collection without photos
-                place_doc = {
-                    "place_id": params.place_id,
-                    "name": name,
-                    "place_type": "attraction",  # Default type, will be updated if different
-                    "location": location,
-                    "rating": rating,
-                    "vicinity": vicinity,
-                    "timestamp": datetime.now()
-                }
-                await places_collection.insert_one(place_doc)
-                
-                # Add photos to the response
-                place_doc["photos"] = location_photos
-                if place_doc.get("timestamp"):
-                    place_doc["timestamp"] = place_doc["timestamp"].isoformat()
-                
-                return JSONResponse(content=place_doc)
-                
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error fetching place details: {str(e)}")
 
+    # Access MongoDB collections
+    places_collection = db['placesData']  # Changed to places folder
+    images_collection = db['images']  # Changed to images folder
+    
+    # Check if place exists in MongoDB
+    existing_place = await places_collection.find_one({"place_id": params.place_id})
+    
+    if existing_place:
+        # Remove _id field
+        existing_place.pop('_id', None)
+        
+        # Get the associated image from images collection
+        if params.include_photos:
+            existing_place["photos"] = [] # Initialize as list
+            image_cursor = images_collection.find({"place_id": params.place_id})
+            async for image_doc in image_cursor:
+                image_doc.pop('_id', None)
+                existing_place["photos"].append({
+                    "image": image_doc["image"],
+                    "content_type": image_doc["content_type"]
+                })
+        else:
+            existing_place["photos"] = []
+        
+        # Return existing place data
+        print(existing_place)
+        if existing_place.get("timestamp"):
+            existing_place["timestamp"] = existing_place["timestamp"].isoformat()
+        return JSONResponse(content=existing_place)
+    
+    # If place doesn't exist, fetch it
+    headers = {
+        "Content-Type": "application/json",
+        "X-Goog-Api-Key": apikey,
+        "X-Goog-FieldMask": "places.id,places.displayName,places.location,places.rating,places.userRatingCount,places.photos,places.types,places.formattedAddress"
+    }
+    
+    # Fetch the specific place details
+    place_url = f"https://places.googleapis.com/v1/places/{params.place_id}"
+    async with aiohttp.ClientSession() as session:
+        async with session.get(place_url, headers=headers) as response:
+            place_response = await response.json()
+            
+            if "error" in place_response:
+                raise HTTPException(status_code=404, detail="Place not found")
+            
+            # Process and store the place
+            place = place_response
+            name = place.get("displayName", {}).get("text", "")
+            location = place.get("location", {})
+            rating = place.get("rating")
+            vicinity = place.get("formattedAddress")
+            
+            # Get photo references if they exist
+            photo_refs = []
+            if "photos" in place:
+                for photo in place["photos"]:
+                    photo_ref = photo.get("name")
+                    if photo_ref:
+                        photo_refs.append(photo_ref)
+            
+            # Initialize location photos list
+            location_photos = []
+            
+            # If photos are requested, fetch them
+            if params.include_photos and photo_refs:
+                photos_retriever = RetrievePhotos(photo_refs, params.place_id) # Pass all refs
+                photo_responses = await photos_retriever.get_photos()
+                
+                for photo_resp_item in photo_responses: # Iterate through all responses
+                    if photo_resp_item is not None and hasattr(photo_resp_item, 'body'):
+                        # Store image in images collection
+                        image_doc_content = base64.b64encode(photo_resp_item.body).decode('utf-8')
+                        image_doc = {
+                            "place_id": params.place_id,
+                            "image": image_doc_content,
+                            "content_type": "image/jpeg", # Assuming JPEG, adjust if necessary
+                            "timestamp": datetime.now().isoformat() # Store as ISO string
+                        }
+                        # Check if this specific image (by content or a unique photo_ref part) already exists to avoid duplicates
+                        # This part might need more sophisticated handling if Google's photo_refs are not unique enough for direct use
+                        # For now, we'll insert, but duplicate image data might occur if not handled.
+                        await images_collection.insert_one(image_doc)
+                        
+                        location_photos.append({
+                            "image": image_doc_content,
+                            "content_type": image_doc["content_type"]
+                        })
+            
+            # Store place in places collection without photos
+            place_doc = {
+                "place_id": params.place_id,
+                "name": name,
+                "place_type": "attraction",  # Default type, will be updated if different
+                "location": location,
+                "rating": rating,
+                "vicinity": vicinity,
+                "timestamp": datetime.now()
+            }
+            await places_collection.insert_one(place_doc)
+            
+            # Add photos to the response
+            place_doc["photos"] = location_photos
+            if place_doc.get("timestamp"):
+                place_doc["timestamp"] = place_doc["timestamp"].isoformat()
+            
+            return JSONResponse(content=place_doc)
+            
+    
 @app.post("/nearby-places")
 async def get_nearby_places(params: NearbyPlacesRequest, 
                            current_user: auth.UserInDB = Depends(current_active_user_dependency)):
