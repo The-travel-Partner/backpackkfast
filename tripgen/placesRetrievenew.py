@@ -75,8 +75,9 @@ class placesRetrieve:
             if await self.request.is_disconnected():
                 print("Client disconnected during step 3.")
                 return {"status": "Process stopped"}
-            fedresult = await places.getAll()
             print('test')
+            fedresult = await places.getAll()
+            
             print(json.dumps(fedresult, indent=4))
             print('test')
             if placefind is not None:
@@ -128,43 +129,58 @@ class placesRetrieve:
             api_key="hlN2QjeqJ9hBh2tq1AVvw6O50ilZX4gCfPtbgx6j",
             client_id="41b89c52-b013-41a3-b2a4-f0ca47d68d8b",
             client_secret="IvSD5AfH21DFYh0qHgoqRmLNZIFtyXRM"
-
         )
         latitudes = df_sorted['lat']
         longitudes = df_sorted['lng']
 
         lat_lng_string = '|'.join(f"{lat},{lon}" for lat, lon in zip(latitudes, longitudes))
 
-        print(lat_lng_string)
-
         def split_into_batches(lat_lng_string, batch_size=5):
-
             lat_lon_list = lat_lng_string.split('|')
-
             batches = ['|'.join(lat_lon_list[i:i + batch_size]) for i in range(0, len(lat_lon_list), batch_size)]
-
             return batches
 
         batches = split_into_batches(lat_lng_string, batch_size=5)
 
-        # Print the batches
-        poly = []
-        dist = []
-        for end_batch in batches:
+        async def process_batch(end_batch):
             start = "26.9854865,75.8513454"
             end = end_batch
+            try:
+                # Run the synchronous API call in a separate thread
+                distance_matrix = await asyncio.to_thread(
+                    client.routing.distance_matrix,
+                    start,
+                    end
+                )
+                batch_poly = []
+                batch_dist = []
+                
+                for row in distance_matrix.get('rows', []):
+                    for element in row.get('elements', []):
+                        distance = element.get('distance')
+                        polys = element.get('polyline')
+                        
+                        if polys is not None:
+                            batch_poly.append(polys)
+                        if distance is not None:
+                            batch_dist.append(distance)
+                            
+                return batch_poly, batch_dist
+            except Exception as e:
+                print(f"Error processing batch: {e}")
+                return [], []
 
-            distance_matrix = client.routing.distance_matrix(start, end)
-
-            for row in distance_matrix.get('rows', []):
-                for element in row.get('elements', []):
-                    distance = element.get('distance')
-                    polys = element.get('polyline')
-
-                    if polys is not None:
-                        poly.append(polys)
-                    if distance is not None:
-                        dist.append(distance)
+        # Process batches concurrently
+        import asyncio
+        tasks = [process_batch(batch) for batch in batches]
+        results = await asyncio.gather(*tasks)
+        
+        # Combine results
+        poly = []
+        dist = []
+        for batch_poly, batch_dist in results:
+            poly.extend(batch_poly)
+            dist.extend(batch_dist)
 
         df_sorted['distance'] = dist
         
