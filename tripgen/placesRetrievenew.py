@@ -12,6 +12,7 @@ import pandas as pd
 from tripgen.asyncclass import place
 import sys
 import copy
+import asyncio
 
 import re
 from tripgen.placesDBClass import placesDBClass
@@ -143,35 +144,54 @@ class placesRetrieve:
         batches = split_into_batches(lat_lng_string, batch_size=5)
 
         async def process_batch(end_batch):
+            # Fetches a distance matrix for the given batch of destination points
+            # with an exponential back-off retry mechanism to cope with 429
+            # (rate-limit) responses. The function always returns distance and
+            # polyline lists whose length equals the number of destinations in
+            # the batch so that downstream dataframe assignments cannot fail.
+
             start = "26.9854865,75.8513454"
-            end = end_batch
-            try:
-                # Run the synchronous API call in a separate thread
-                distance_matrix = await asyncio.to_thread(
-                    client.routing.distance_matrix,
-                    start,
-                    end
-                )
-                batch_poly = []
-                batch_dist = []
-                
-                for row in distance_matrix.get('rows', []):
-                    for element in row.get('elements', []):
-                        distance = element.get('distance')
-                        polys = element.get('polyline')
-                        
-                        if polys is not None:
-                            batch_poly.append(polys)
-                        if distance is not None:
-                            batch_dist.append(distance)
-                            
-                return batch_poly, batch_dist
-            except Exception as e:
-                print(f"Error processing batch: {e}")
-                return [], []
+            dest_count = len(end_batch.split('|'))
+
+            async def fetch_with_retries(max_retries: int = 5, base_delay: float = 1.0):
+                for attempt in range(max_retries):
+                    try:
+                        return await asyncio.to_thread(
+                            client.routing.distance_matrix,
+                            start,
+                            end_batch
+                        )
+                    except Exception as exc:
+                        # Handle rate-limit errors with exponential back-off
+                        if "429" in str(exc) or "rate limit" in str(exc).lower():
+                            delay = base_delay * (2 ** attempt)
+                            print(f"Rate limited. Waiting {delay} seconds...")
+                            await asyncio.sleep(delay)
+                        else:
+                            # Unexpected error; break and handle below
+                            print(f"Unexpected error while fetching distance matrix: {exc}")
+                            break
+                return None  # All retries exhausted or unrecoverable error
+
+            response = await fetch_with_retries()
+
+            # Pre-populate with None so length is consistent even on failure
+            batch_poly: list = [None] * dest_count
+            batch_dist: list = [None] * dest_count
+
+            if response is not None:
+                try:
+                    elements = response.get('rows', [])[0].get('elements', [])
+                    for idx, element in enumerate(elements[:dest_count]):
+                        batch_poly[idx] = element.get('polyline')
+                        batch_dist[idx] = element.get('distance')
+                except Exception as parse_exc:
+                    # Parsing failed – keep None placeholders but log
+                    print(f"Error parsing distance matrix response: {parse_exc}")
+
+            return batch_poly, batch_dist
 
         # Process batches concurrently
-        import asyncio
         tasks = [process_batch(batch) for batch in batches]
         results = await asyncio.gather(*tasks)
         
@@ -181,6 +201,14 @@ class placesRetrieve:
         for batch_poly, batch_dist in results:
             poly.extend(batch_poly)
             dist.extend(batch_dist)
+
+        # Guarantee alignment between the distances list and the dataframe
+        if len(dist) != len(df_sorted):
+            print(f"WARNING: Expected {len(df_sorted)} distance values but received {len(dist)}. Padding/truncating accordingly.")
+            if len(dist) < len(df_sorted):
+                dist.extend([None] * (len(df_sorted) - len(dist)) )
+            else:
+                dist = dist[:len(df_sorted)]
 
         df_sorted['distance'] = dist
         
