@@ -17,6 +17,9 @@ import re
 from tripgen.placesDBClass import placesDBClass
 from tripgen.bestplacesModel import bestPlacesModel
 import heapq
+import asyncio
+from math import radians, sin, cos, sqrt, atan2
+
 class TripCreator:
     def __init__(self, request, city_name, place_types, no_of_days, useremail, placesdb, weekday, travel_schedule, df_sorted=None):
         self.request = request
@@ -316,32 +319,114 @@ class TripCreator:
         else:
 
 
-            def get_distance_matrix(start_lat, start_lng, end_lat, end_lng):
+            async def get_distance_matrix(start_lat, start_lng, end_lat, end_lng, max_retries=3):
                 start_point = f"{start_lat},{start_lng}"
                 end_point = f"{end_lat},{end_lng}"
-                try:
-                    distance_matrix = client.routing.distance_matrix(start_point, end_point)
-                    return distance_matrix
-                except Exception as e:
-                    return f"Error getting distance matrix: {str(e)}"
+                
+                # Retry logic with exponential backoff
+                retry_delays = [1, 2, 4]  # Delays in seconds
+                
+                for attempt in range(max_retries):
+                    try:
+                        # Validate coordinates
+                        if not all(isinstance(x, (int, float)) for x in [start_lat, start_lng, end_lat, end_lng]):
+                            raise ValueError("Invalid coordinate values")
+                        
+                        if not (-90 <= start_lat <= 90 and -90 <= end_lat <= 90 and
+                               -180 <= start_lng <= 180 and -180 <= end_lng <= 180):
+                            raise ValueError("Coordinates out of valid range")
+                        
+                        # Get distance matrix - note: this is synchronous
+                        distance_matrix = client.routing.distance_matrix(start_point, end_point)
+                        
+                        # Validate response
+                        if not distance_matrix or not isinstance(distance_matrix, dict):
+                            raise ValueError("Invalid distance matrix response")
+                        
+                        # Check if we got valid distance and duration
+                        if 'rows' not in distance_matrix or not distance_matrix['rows']:
+                            raise ValueError("No distance data in response")
+                        
+                        first_row = distance_matrix['rows'][0]
+                        if 'elements' not in first_row or not first_row['elements']:
+                            raise ValueError("No route elements in response")
+                        
+                        first_element = first_row['elements'][0]
+                        if 'status' not in first_element:
+                            raise ValueError("No status in route element")
+                        
+                        # Check if the route is valid
+                        if first_element['status'] != 'OK':
+                            # If route not found, return a fallback distance
+                            if first_element['status'] == 'NOT_FOUND':
+                                # Calculate rough distance using Haversine formula
+                                R = 6371  # Earth's radius in kilometers
+                                
+                                lat1, lon1 = radians(start_lat), radians(start_lng)
+                                lat2, lon2 = radians(end_lat), radians(end_lng)
+                                
+                                dlat = lat2 - lat1
+                                dlon = lon2 - lon1
+                                
+                                a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
+                                c = 2 * atan2(sqrt(a), sqrt(1-a))
+                                distance = R * c
+                                
+                                # Create fallback response
+                                return {
+                                    'rows': [{
+                                        'elements': [{
+                                            'distance': {'value': int(distance * 1000), 'text': f"{distance:.1f} km"},
+                                            'duration': int(distance * 200),  # Return as integer
+                                            'status': 'FALLBACK'
+                                        }]
+                                    }]
+                                }
+                            
+                            raise ValueError(f"Route status: {first_element['status']}")
+                        
+                        return distance_matrix
+                        
+                    except Exception as e:
+                        if attempt < max_retries - 1:
+                            # Log the error and wait before retrying
+                            print(f"Attempt {attempt + 1} failed: {str(e)}")
+                            await asyncio.sleep(retry_delays[attempt])
+                            continue
+                        else:
+                            # On final attempt, return fallback with error info
+                            print(f"All attempts failed: {str(e)}")
+                            return {
+                                'rows': [{
+                                    'elements': [{
+                                        'distance': {'value': 0, 'text': 'Unknown'},
+                                        'duration': 0,  # Return as integer
+                                        'status': 'ERROR',
+                                        'error': str(e)
+                                    }]
+                                }]
+                            }
 
 
-            def durations(travel_schedule, place_types):
-                def travel_dur(start_lat, start_lng, end_lat, end_lng):
-                    distance_matrix = get_distance_matrix(start_lat, start_lng, end_lat, end_lng)
+            async def durations(travel_schedule, place_types):
+                async def travel_dur(start_lat, start_lng, end_lat, end_lng):
+                    distance_matrix = await get_distance_matrix(start_lat, start_lng, end_lat, end_lng)
 
                     if 'rows' in distance_matrix:
-
-                        duration_seconds = distance_matrix['rows'][0]['elements'][0]['duration']
+                        duration = distance_matrix['rows'][0]['elements'][0]['duration']
+                        # Handle both dictionary and integer formats
+                        if isinstance(duration, dict):
+                            duration_seconds = duration['value']
+                        else:
+                            duration_seconds = duration
                         duration_minutes = duration_seconds // 60
                         return duration_minutes
                     else:
                         print(f"    Error fetching distance matrix: {distance_matrix}")
-                        Exception(f"Error fetching distance matrix: {distance_matrix}")
+                        raise Exception(f"Error fetching distance matrix: {distance_matrix}")
 
                 durations = []
                 for day in day_wise:
-
                     duration = []
                     if travel_schedule == 'Leisure':
                         for i in range(2):
@@ -355,25 +440,22 @@ class TripCreator:
                                 lunch_lng = day_wise[day]['Lunch']['lng'][str(0)]
                                 print(lunch_lat, lunch_lng)
 
-                                duration.append(travel_dur(start_lat=start_lat, start_lng=start_lng, end_lat=lunch_lat,
+                                duration.append(await travel_dur(start_lat=start_lat, start_lng=start_lng, end_lat=lunch_lat,
                                                            end_lng=lunch_lng))
                                 duration.append(
-                                    travel_dur(start_lat=lunch_lat, start_lng=lunch_lng, end_lat=end_lat, end_lng=end_lng))
+                                    await travel_dur(start_lat=lunch_lat, start_lng=lunch_lng, end_lat=end_lat, end_lng=end_lng))
 
                             if i == 1:
-                                duration.append(travel_dur(start_lat, start_lng, end_lat, end_lng))
+                                duration.append(await travel_dur(start_lat, start_lng, end_lat, end_lng))
                                 start_lat = day_wise[day]['lat'][str(i + 1)]
                                 start_lng = day_wise[day]['lng'][str(i + 1)]
                                 dinner_lat = day_wise[day]['Dinner']['lat'][str(0)]
                                 dinner_lng = day_wise[day]['Dinner']['lng'][str(0)]
-                                duration.append(travel_dur(start_lat, start_lng, dinner_lat, dinner_lng))
+                                duration.append(await travel_dur(start_lat, start_lng, dinner_lat, dinner_lng))
                                 if 'night_club' in place_types or 'bar' in place_types:
                                     night_lat = day_wise[day]['Night']['lat'][str(0)]
                                     night_lng = day_wise[day]['Night']['lng'][str(0)]
-                                    duration.append(travel_dur(dinner_lat, dinner_lng, night_lat, night_lng))
-
-
-
+                                    duration.append(await travel_dur(dinner_lat, dinner_lng, night_lat, night_lng))
 
                     elif travel_schedule == 'Explorer':
                         print(travel_schedule)
@@ -385,26 +467,24 @@ class TripCreator:
                             if i == 1:
                                 lunch_lat = day_wise[day]['Lunch']['lat'][str(0)]
                                 lunch_lng = day_wise[day]['Lunch']['lng'][str(0)]
-                                duration.append(travel_dur(start_lat=start_lat, start_lng=start_lng, end_lat=lunch_lat,
+                                duration.append(await travel_dur(start_lat=start_lat, start_lng=start_lng, end_lat=lunch_lat,
                                                            end_lng=lunch_lng))
                                 duration.append(
-                                    travel_dur(start_lat=lunch_lat, start_lng=lunch_lng, end_lat=end_lat, end_lng=end_lng))
-
+                                    await travel_dur(start_lat=lunch_lat, start_lng=lunch_lng, end_lat=end_lat, end_lng=end_lng))
 
                             elif i == 2:
-                                duration.append(travel_dur(start_lat, start_lng, end_lat, end_lng))
+                                duration.append(await travel_dur(start_lat, start_lng, end_lat, end_lng))
                                 start_lat = day_wise[day]['lat'][str(i + 1)]
                                 start_lng = day_wise[day]['lng'][str(i + 1)]
                                 dinner_lat = day_wise[day]['Dinner']['lat'][str(0)]
                                 dinner_lng = day_wise[day]['Dinner']['lng'][str(0)]
-                                duration.append(travel_dur(start_lat, start_lng, dinner_lat, dinner_lng))
+                                duration.append(await travel_dur(start_lat, start_lng, dinner_lat, dinner_lng))
                                 if ('night_club' in place_types) or ('bar' in place_types):
                                     night_lat = day_wise[day]['Night']['lat'][str(0)]
                                     night_lng = day_wise[day]['Night']['lng'][str(0)]
-                                    duration.append(travel_dur(dinner_lat, dinner_lng, night_lat, night_lng))
+                                    duration.append(await travel_dur(dinner_lat, dinner_lng, night_lat, night_lng))
                             else:
-                                duration.append(travel_dur(start_lat, start_lng, end_lat, end_lng))
-
+                                duration.append(await travel_dur(start_lat, start_lng, end_lat, end_lng))
 
                     elif travel_schedule == "Adventurer":
                         for i in range(4):
@@ -415,30 +495,29 @@ class TripCreator:
                             if i == 1:
                                 lunch_lat = day_wise[day]['Lunch']['lat'][str(0)]
                                 lunch_lng = day_wise[day]['Lunch']['lng'][str(0)]
-                                duration.append(travel_dur(start_lat=start_lat, start_lng=start_lng, end_lat=lunch_lat,
+                                duration.append(await travel_dur(start_lat=start_lat, start_lng=start_lng, end_lat=lunch_lat,
                                                            end_lng=lunch_lng))
                                 duration.append(
-                                    travel_dur(start_lat=lunch_lat, start_lng=lunch_lng, end_lat=end_lat, end_lng=end_lng))
-
+                                    await travel_dur(start_lat=lunch_lat, start_lng=lunch_lng, end_lat=end_lat, end_lng=end_lng))
 
                             elif i == 3:
-                                duration.append(travel_dur(start_lat, start_lng, end_lat, end_lng))
+                                duration.append(await travel_dur(start_lat, start_lng, end_lat, end_lng))
                                 start_lat = day_wise[day]['lat'][str(i + 1)]
                                 start_lng = day_wise[day]['lng'][str(i + 1)]
                                 dinner_lat = day_wise[day]['Dinner']['lat'][str(0)]
                                 dinner_lng = day_wise[day]['Dinner']['lng'][str(0)]
-                                duration.append(travel_dur(end_lat, end_lng, dinner_lat, dinner_lng))
+                                duration.append(await travel_dur(end_lat, end_lng, dinner_lat, dinner_lng))
                                 if 'night_club' in place_types or 'bar' in place_types:
                                     night_lat = day_wise[day]['Night']['lat'][str(0)]
                                     night_lng = day_wise[day]['Night']['lng'][str(0)]
-                                    duration.append(travel_dur(dinner_lat, dinner_lng, night_lat, night_lng))
+                                    duration.append(await travel_dur(dinner_lat, dinner_lng, night_lat, night_lng))
                             else:
-                                duration.append(travel_dur(start_lat, start_lng, end_lat, end_lng))
+                                duration.append(await travel_dur(start_lat, start_lng, end_lat, end_lng))
                     durations.append(duration)
 
                 return durations
 
-            dur = durations(self.travel_schedule, self.place_types)
+            dur = await durations(self.travel_schedule, self.place_types)
 
             def convert_minutes(minutes):
                 hours = minutes // 60
@@ -446,94 +525,242 @@ class TripCreator:
                 return f"{int(hours):02}:{int(remaining_minutes):02}"
 
             def create_dynamic_slots_with_fixed_lunch(day_wise, start_time_str, end_time_str, travel_durations, lunch_start_str, lunch_end_str, dinner_end_str, travel_schedule):
+                """
+                Create dynamic time slots for each day with robust error handling and validation.
+                
+                Args:
+                    day_wise: Dictionary containing day-wise place data
+                    start_time_str: Start time of the day (e.g., "09:00")
+                    end_time_str: End time of main activities (e.g., "20:00")
+                    travel_durations: List of travel durations for each day
+                    lunch_start_str: Lunch start time (e.g., "13:00")
+                    lunch_end_str: Lunch end time (e.g., "14:30")
+                    dinner_end_str: Dinner end time (e.g., "21:30")
+                    travel_schedule: Schedule type ("Leisure", "Explorer", "Adventurer")
+                
+                Returns:
+                    Updated day_wise dictionary with slot information
+                """
+                
+                # Schedule configuration with validation
+                schedule_config = {
+                    "Explorer": {"morning": (0, 2), "afternoon": (3, 5), "min_slot_duration": 30},
+                    "Adventurer": {"morning": (0, 2), "afternoon": (3, 6), "min_slot_duration": 25},
+                    "Leisure": {"morning": (0, 1), "afternoon": (1, 3), "min_slot_duration": 45}
+                }
+                
+                # Validate travel schedule
+                if travel_schedule not in schedule_config:
+                    print(f"Warning: Unknown travel schedule '{travel_schedule}', defaulting to Explorer")
+                    travel_schedule = "Explorer"
+                
+                config = schedule_config[travel_schedule]
+                morning_start, morning_end = config["morning"]
+                afternoon_start, afternoon_end = config["afternoon"]
+                min_slot_duration = config["min_slot_duration"]
+                
+                def safe_time_parse(time_str, default_time="09:00"):
+                    """Safely parse time string with fallback"""
+                    try:
+                        return datetime.strptime(time_str, "%H:%M")
+                    except (ValueError, TypeError):
+                        print(f"Warning: Invalid time format '{time_str}', using default '{default_time}'")
+                        return datetime.strptime(default_time, "%H:%M")
+                
+                def validate_time_sequence(times_dict):
+                    """Validate that times are in logical sequence"""
+                    time_order = ['start', 'lunch_start', 'lunch_end', 'end', 'dinner_end']
+                    for i in range(len(time_order) - 1):
+                        if times_dict[time_order[i]] >= times_dict[time_order[i + 1]]:
+                            print(f"Warning: Time sequence issue - {time_order[i]} >= {time_order[i + 1]}")
+                            return False
+                    return True
+                
+                def calculate_optimal_slot_duration(available_time, num_slots, travel_time, min_duration):
+                    """Calculate optimal slot duration with constraints"""
+                    if num_slots <= 0:
+                        return min_duration
+                    
+                    raw_duration = (available_time - travel_time) / num_slots
+                    
+                    # Ensure minimum duration
+                    if raw_duration < min_duration:
+                        print(f"Warning: Calculated slot duration ({raw_duration:.1f}min) below minimum ({min_duration}min)")
+                        return min_duration
+                    
+                    return max(raw_duration, min_duration)
+                
                 a = 0
                 for day in day_wise:
-
-                    travel_durations = dur[a]
-                    if travel_schedule == "Explorer":
-                        morning_start = 0
-                        morning_end = 2
-                        afternoon_start = 3
-                        afternoon_end = 5
-                    elif travel_schedule == "Adventurer":
-                        morning_start = 0
-                        morning_end = 2
-                        afternoon_start = 3
-                        afternoon_end = 6
-                    elif travel_schedule == "Leisure":
-                        morning_start = 0
-                        morning_end = 1
-                        afternoon_start = 1
-                        afternoon_end = 3
-                    # Convert start, end, and lunch times from strings to datetime objects
-                    start_time = datetime.strptime(start_time_str, "%H:%M")
-                    end_time = datetime.strptime(end_time_str, "%H:%M")
-                    lunch_start = datetime.strptime(lunch_start_str, "%H:%M")
-                    lunch_end = datetime.strptime(lunch_end_str, "%H:%M")
-
-                    # Calculate total available time before lunch and after lunch
-                    morning_time = (lunch_start - start_time).total_seconds() / 60  # Time before lunch in minutes
-                    afternoon_time = (end_time - lunch_end).total_seconds() / 60  # Time after lunch in minutes
-
-                    travel_duration_morning = sum(travel_durations[x] for x in range(morning_start, morning_end))
-
-                    travel_duration_afternoon = sum(
-                        travel_durations[x] for x in range(afternoon_start, len(travel_durations)))
-
-                    total_travel_morning = morning_time - travel_duration_morning
-
-                    if travel_schedule == 'Leisure':
-                        morning_slot_duration = total_travel_morning
-                    else:
-                        morning_slot_duration = total_travel_morning / 2
-
-                    total_travel_afternoon = afternoon_time - travel_duration_afternoon
-
-                    if travel_schedule == 'Adventurer':
-                        afternoon_slot_duration = total_travel_afternoon / 3
-                    else:
-                        afternoon_slot_duration = total_travel_afternoon / 2
-
-                    slot = {}
-                    slot_start = start_time
-
-                    for i in range(morning_start, morning_end):
-
-                        slot_end = slot_start + timedelta(minutes=morning_slot_duration)
-
-                        slot[f"{i}"] = {"Start": slot_start.strftime("%H:%M"), "End": slot_end.strftime("%H:%M"),
-                                        "Slot Duration": convert_minutes(morning_slot_duration),
-                                        "Travel Duration": travel_durations[i]}
-
-                        slot_start = slot_end + timedelta(minutes=travel_durations[i])
-                        if i == morning_end - 1:
-                            slot['Lunch'] = {"Start": lunch_start_str, "End": lunch_end_str,
-                                             "Slot Duration": (lunch_end - lunch_start).total_seconds() / 60,
-                                             "Travel Duration": travel_durations[i]}
-                            slot_start = lunch_end + timedelta(minutes=travel_durations[i])
-
-                    for i in range(afternoon_start, afternoon_end):
-                        slot_end = slot_start + timedelta(minutes=afternoon_slot_duration)
-
-                        slot[f"{i}"] = {"Start": slot_start.strftime("%H:%M"), "End": slot_end.strftime("%H:%M"),
-                                        "Slot Duration": convert_minutes(afternoon_slot_duration),
-                                        "Travel Duration": travel_durations[i]}
-
-                        slot_start = slot_end + timedelta(minutes=travel_durations[i])
-
-                    dinner_slot_duration = (datetime.strptime(dinner_end_str, "%H:%M") - end_time).total_seconds() / 60
-                    slot["Dinner"] = {"Start": end_time_str, "End": dinner_end_str, "Slot Duration": dinner_slot_duration,
-                                      "Travel Duration": travel_durations[-1:][0]}
-                    if "Night" in day_wise[day]:
-                        slot_start = datetime.strptime(dinner_end_str, "%H:%M") + timedelta(
-                            minutes=travel_durations[-1:][0])
-                        slot_end = slot_start + timedelta(minutes=90)
-                        slot["Night"] = {"Start": slot_start.strftime("%H:%M"), "End": slot_end.strftime("%H:%M"),
-                                         "Slot Duration": (slot_end - slot_start).total_seconds() / 60}
-                    df = pd.DataFrame(slot).T
-                    finalslot = json.loads(df.to_json())
-                    day_wise[day].update({"Slots": finalslot})
+                    try:
+                        # Validate travel durations
+                        if a >= len(dur):
+                            print(f"Warning: No travel duration data for day {a + 1}, skipping")
+                            continue
+                            
+                        travel_durations = dur[a]
+                        
+                        # Validate travel durations list
+                        if not travel_durations or len(travel_durations) < afternoon_end:
+                            print(f"Warning: Insufficient travel duration data for day {a + 1}")
+                            # Pad with default values
+                            while len(travel_durations) < afternoon_end:
+                                travel_durations.append(15)  # Default 15 minutes
+                        
+                        # Parse and validate all times
+                        times = {
+                            'start': safe_time_parse(start_time_str, "09:00"),
+                            'end': safe_time_parse(end_time_str, "20:00"),
+                            'lunch_start': safe_time_parse(lunch_start_str, "13:00"),
+                            'lunch_end': safe_time_parse(lunch_end_str, "14:30"),
+                            'dinner_end': safe_time_parse(dinner_end_str, "21:30")
+                        }
+                        
+                        # Validate time sequence
+                        if not validate_time_sequence(times):
+                            print(f"Adjusting times for day {a + 1} due to sequence issues")
+                            # Auto-correct common issues
+                            if times['lunch_start'] <= times['start']:
+                                times['lunch_start'] = times['start'] + timedelta(hours=3)
+                            if times['lunch_end'] <= times['lunch_start']:
+                                times['lunch_end'] = times['lunch_start'] + timedelta(minutes=90)
+                            if times['end'] <= times['lunch_end']:
+                                times['end'] = times['lunch_end'] + timedelta(hours=4)
+                        
+                        # Calculate available time periods
+                        morning_time = (times['lunch_start'] - times['start']).total_seconds() / 60
+                        afternoon_time = (times['end'] - times['lunch_end']).total_seconds() / 60
+                        
+                        # Calculate travel times
+                        try:
+                            travel_duration_morning = sum(travel_durations[x] for x in range(morning_start, morning_end) if x < len(travel_durations))
+                            travel_duration_afternoon = sum(travel_durations[x] for x in range(afternoon_start, min(afternoon_end, len(travel_durations))))
+                        except (IndexError, TypeError) as e:
+                            print(f"Warning: Error calculating travel durations for day {a + 1}: {e}")
+                            travel_duration_morning = (morning_end - morning_start) * 15
+                            travel_duration_afternoon = (afternoon_end - afternoon_start) * 15
+                        
+                        # Calculate slot durations
+                        morning_slots = morning_end - morning_start
+                        afternoon_slots = afternoon_end - afternoon_start
+                        
+                        morning_slot_duration = calculate_optimal_slot_duration(
+                            morning_time, morning_slots, travel_duration_morning, min_slot_duration
+                        )
+                        
+                        afternoon_slot_duration = calculate_optimal_slot_duration(
+                            afternoon_time, afternoon_slots, travel_duration_afternoon, min_slot_duration
+                        )
+                        
+                        # Build slots
+                        slot = {}
+                        slot_start = times['start']
+                        
+                        # Morning slots
+                        for i in range(morning_start, morning_end):
+                            if i >= len(travel_durations):
+                                print(f"Warning: Missing travel duration for slot {i}, using default")
+                                travel_time = 15
+                            else:
+                                travel_time = max(0, travel_durations[i])  # Ensure non-negative
+                            
+                            slot_end = slot_start + timedelta(minutes=morning_slot_duration)
+                            
+                            slot[f"{i}"] = {
+                                "Start": slot_start.strftime("%H:%M"),
+                                "End": slot_end.strftime("%H:%M"),
+                                "Slot Duration": convert_minutes(morning_slot_duration),
+                                "Travel Duration": travel_time,
+                                "Type": "Morning Activity"
+                            }
+                            
+                            slot_start = slot_end + timedelta(minutes=travel_time)
+                            
+                            # Add lunch after last morning slot
+                            if i == morning_end - 1:
+                                lunch_duration = (times['lunch_end'] - times['lunch_start']).total_seconds() / 60
+                                slot['Lunch'] = {
+                                    "Start": times['lunch_start'].strftime("%H:%M"),
+                                    "End": times['lunch_end'].strftime("%H:%M"),
+                                    "Slot Duration": convert_minutes(lunch_duration),
+                                    "Travel Duration": travel_time,
+                                    "Type": "Meal"
+                                }
+                                slot_start = times['lunch_end'] + timedelta(minutes=travel_time)
+                        
+                        # Afternoon slots
+                        last_place_end_time = slot_start
+                        
+                        for i in range(afternoon_start, afternoon_end):
+                            if i >= len(travel_durations):
+                                travel_time = 15
+                            else:
+                                travel_time = max(0, travel_durations[i])
+                            
+                            slot_end = slot_start + timedelta(minutes=afternoon_slot_duration)
+                            
+                            slot[f"{i}"] = {
+                                "Start": slot_start.strftime("%H:%M"),
+                                "End": slot_end.strftime("%H:%M"),
+                                "Slot Duration": convert_minutes(afternoon_slot_duration),
+                                "Travel Duration": travel_time,
+                                "Type": "Afternoon Activity"
+                            }
+                            
+                            slot_start = slot_end + timedelta(minutes=travel_time)
+                            last_place_end_time = slot_start
+                        
+                        # Dynamic dinner timing
+                        last_travel_time = travel_durations[-1] if travel_durations else 15
+                        actual_dinner_start = max(
+                            times['end'], 
+                            last_place_end_time - timedelta(minutes=last_travel_time)
+                        )
+                        
+                        # Ensure dinner has reasonable duration
+                        dinner_duration = (times['dinner_end'] - actual_dinner_start).total_seconds() / 60
+                        if dinner_duration < 30:  # Minimum 30 minutes for dinner
+                            print(f"Warning: Dinner duration too short ({dinner_duration:.1f}min), extending dinner end time")
+                            times['dinner_end'] = actual_dinner_start + timedelta(minutes=90)
+                            dinner_duration = 90
+                        
+                        slot["Dinner"] = {
+                            "Start": actual_dinner_start.strftime("%H:%M"),
+                            "End": times['dinner_end'].strftime("%H:%M"),
+                            "Slot Duration": convert_minutes(dinner_duration),
+                            "Travel Duration": last_travel_time,
+                            "Type": "Meal"
+                        }
+                        
+                        # Night activities (if applicable)
+                        if "Night" in day_wise[day]:
+                            night_start = times['dinner_end'] + timedelta(minutes=last_travel_time)
+                            night_end = night_start + timedelta(minutes=90)
+                            slot["Night"] = {
+                                "Start": night_start.strftime("%H:%M"),
+                                "End": night_end.strftime("%H:%M"),
+                                "Slot Duration": convert_minutes(90),
+                                "Travel Duration": 0,
+                                "Type": "Night Activity"
+                            }
+                        
+                        # Convert to DataFrame and add to day_wise
+                        try:
+                            df = pd.DataFrame(slot).T
+                            finalslot = json.loads(df.to_json())
+                            day_wise[day].update({"Slots": finalslot})
+                        except Exception as e:
+                            print(f"Error creating slots DataFrame for day {a + 1}: {e}")
+                            # Create a simple fallback slot structure
+                            day_wise[day].update({"Slots": {"Error": "Failed to create detailed slots"}})
+                        
+                    except Exception as e:
+                        print(f"Error processing day {a + 1}: {e}")
+                        # Add error information to the day
+                        day_wise[day].update({"Slots": {"Error": f"Slot creation failed: {str(e)}"}})
+                    
                     a += 1
+                
                 return day_wise
 
             main_start = "09:00"

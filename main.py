@@ -1193,228 +1193,180 @@ async def get_nearby_places(params: NearbyPlacesRequest,
     try:
         # Initialize results
         print(params.json())
-        attractions = []
-        restaurants = []
         
         # Access MongoDB collections
         places_collection = client.backpackk.places
         images_collection = client.backpackk.images
         
-     
-        
-        # Now fetch nearby places using the provided coordinates
+        # Common headers and URL
         headers = {
             "Content-Type": "application/json",
             "X-Goog-Api-Key": apikey,
             "X-Goog-FieldMask": "places.id,places.displayName,places.location,places.rating,places.userRatingCount,places.photos,places.types,places.formattedAddress"
         }
-        
         places_url = "https://places.googleapis.com/v1/places:searchNearby"
         
+        # Common location restriction
+        location_restriction = {
+            "circle": {
+                "center": {
+                    "latitude": params.latitude,
+                    "longitude": params.longitude
+                },
+                "radius": params.radius
+            }
+        }
+        
         async with aiohttp.ClientSession() as session:
-            # Fetch attractions
+            # Prepare requests for both types
             attraction_data = {
                 "includedTypes": ["tourist_attraction"],
                 "maxResultCount": params.max_results // 2,
-                "locationRestriction": {
-                    "circle": {
-                        "center": {
-                            "latitude": params.latitude,
-                            "longitude": params.longitude
-                        },
-                        "radius": params.radius
-                    }
-                }
+                "locationRestriction": location_restriction
             }
             
-            async with session.post(places_url, headers=headers, json=attraction_data) as response:
-                attraction_response = await response.json()
-                
-                if "places" in attraction_response:
-                    for place in attraction_response["places"]:
-                        place_id = place.get("id")
-                        
-                        # Check if place exists in MongoDB
-                        existing_place = await places_collection.find_one({"place_id": place_id})
-                        
-                        if existing_place:
-                            location_obj = NearbyLocation(
-                                place_id=existing_place["place_id"],
-                                name=existing_place["name"],
-                                place_type="attraction",
-                                location=existing_place["location"],
-                                rating=existing_place.get("rating"),
-                                vicinity=existing_place.get("vicinity"),
-                                photos=existing_place.get("photos", [])[:1]
-                            )
-                        else:
-                            name = place.get("displayName", {}).get("text", "")
-                            location = place.get("location", {})
-                            rating = place.get("rating")
-                            vicinity = place.get("formattedAddress")
-                            
-                            photo_refs = []
-                            if "photos" in place:
-                                for photo in place["photos"]:
-                                    photo_ref = photo.get("name")
-                                    if photo_ref:
-                                        photo_refs.append(photo_ref)
-                            
-                            location_photos = []
-                            if params.include_photos and photo_refs:
-                                photos_retriever = RetrievePhotos(photo_refs, place_id) # Pass all refs
-                                photo_responses = await photos_retriever.get_photos()
-                                
-                                for photo_resp_item in photo_responses: # Iterate through all responses
-                                    if photo_resp_item is not None and hasattr(photo_resp_item, 'body'):
-                                        # Store image in images collection
-                                        image_doc_content = base64.b64encode(photo_resp_item.body).decode('utf-8')
-                                        image_doc = {
-                                            "place_id": place_id,
-                                            "image": image_doc_content,
-                                            "content_type": "image/jpeg", # Assuming JPEG, adjust if necessary
-                                            "timestamp": datetime.now().isoformat() # Store as ISO string
-                                        }
-                                        # Check if this specific image (by content or a unique photo_ref part) already exists to avoid duplicates
-                                        # This part might need more sophisticated handling if Google's photo_refs are not unique enough for direct use
-                                        # For now, we'll insert, but duplicate image data might occur if not handled.
-                                        await images_collection.insert_one(image_doc)
-                                        
-                                        location_photos.append({
-                                            "image": image_doc_content,
-                                            "content_type": image_doc["content_type"]
-                                        })
-                            
-                            location_obj = NearbyLocation(
-                                place_id=place_id,
-                                name=name,
-                                place_type="attraction",
-                                location=location,
-                                rating=rating,
-                                vicinity=vicinity,
-                                photos=location_photos
-                            )
-                            
-                            place_doc = {
-                                "place_id": place_id,
-                                "name": name,
-                                "place_type": "attraction",
-                                "location": location,
-                                "rating": rating,
-                                "vicinity": vicinity,
-                                "photos": location_photos,
-                                "timestamp": datetime.now()
-                            }
-                            await places_collection.insert_one(place_doc)
-                        
-                        attractions.append(location_obj.to_dict())
-            
-            # Fetch restaurants (similar logic as attractions)
             restaurant_data = {
                 "includedTypes": ["restaurant"],
                 "maxResultCount": params.max_results // 2,
-                "locationRestriction": {
-                    "circle": {
-                        "center": {
-                            "latitude": params.latitude,
-                            "longitude": params.longitude
-                        },
-                        "radius": params.radius
-                    }
-                }
+                "locationRestriction": location_restriction
             }
             
-            async with session.post(places_url, headers=headers, json=restaurant_data) as response:
-                restaurant_response = await response.json()
-                
-                if "places" in restaurant_response:
-                    for place in restaurant_response["places"]:
-                        place_id = place.get("id")
-                        
-                        # Check if place exists in MongoDB
-                        existing_place = await places_collection.find_one({"place_id": place_id})
-                        
-                        if existing_place:
-                            location_obj = NearbyLocation(
-                                place_id=existing_place["place_id"],
-                                name=existing_place["name"],
-                                place_type="restaurant",
-                                location=existing_place["location"],
-                                rating=existing_place.get("rating"),
-                                vicinity=existing_place.get("vicinity"),
-                                photos=existing_place.get("photos", [])[:1]
-                            )
-                        else:
-                            name = place.get("displayName", {}).get("text", "")
-                            location = place.get("location", {})
-                            rating = place.get("rating")
-                            vicinity = place.get("formattedAddress")
-                            
-                            photo_refs = []
-                            if "photos" in place:
-                                for photo in place["photos"]:
-                                    photo_ref = photo.get("name")
-                                    if photo_ref:
-                                        photo_refs.append(photo_ref)
-                            
-                            location_photos = []
-                            if params.include_photos and photo_refs:
-                                photos_retriever = RetrievePhotos(photo_refs, place_id) # Pass all refs
-                                photo_responses = await photos_retriever.get_photos()
-                                
-                                for photo_resp_item in photo_responses: # Iterate through all responses
-                                    if photo_resp_item is not None and hasattr(photo_resp_item, 'body'):
-                                        # Store image in images collection
-                                        image_doc_content = base64.b64encode(photo_resp_item.body).decode('utf-8')
-                                        image_doc = {
-                                            "place_id": place_id,
-                                            "image": image_doc_content,
-                                            "content_type": "image/jpeg", # Assuming JPEG, adjust if necessary
-                                            "timestamp": datetime.now().isoformat() # Store as ISO string
-                                        }
-                                        # Check if this specific image (by content or a unique photo_ref part) already exists to avoid duplicates
-                                        # This part might need more sophisticated handling if Google's photo_refs are not unique enough for direct use
-                                        # For now, we'll insert, but duplicate image data might occur if not handled.
-                                        await images_collection.insert_one(image_doc)
-                                        
-                                        location_photos.append({
-                                            "image": image_doc_content,
-                                            "content_type": image_doc["content_type"]
-                                        })
-                            
-                            location_obj = NearbyLocation(
-                                place_id=place_id,
-                                name=name,
-                                place_type="restaurant",
-                                location=location,
-                                rating=rating,
-                                vicinity=vicinity,
-                                photos=location_photos
-                            )
-                            
-                            place_doc = {
-                                "place_id": place_id,
-                                "name": name,
-                                "place_type": "restaurant",
-                                "location": location,
-                                "rating": rating,
-                                "vicinity": vicinity,
-                                "photos": location_photos,
-                                "timestamp": datetime.now()
-                            }
-                            await places_collection.insert_one(place_doc)
-                        
-                        restaurants.append(location_obj.to_dict())
-        
-        return {
-            "attractions": attractions,
-            "restaurants": restaurants,
-            "total_results": len(attractions) + len(restaurants)
-        }
-        
+            # Fetch both types concurrently
+            async with asyncio.TaskGroup() as tg:
+                attraction_task = tg.create_task(
+                    session.post(places_url, headers=headers, json=attraction_data)
+                )
+                restaurant_task = tg.create_task(
+                    session.post(places_url, headers=headers, json=restaurant_data)
+                )
+            
+            # Process responses
+            attraction_response = await attraction_task.result().json()
+            restaurant_response = await restaurant_task.result().json()
+            
+            # Process places concurrently
+            attraction_places = attraction_response.get("places", [])
+            restaurant_places = restaurant_response.get("places", [])
+            
+            # Process all places in parallel with semaphore to limit concurrent photo downloads
+            semaphore = asyncio.Semaphore(10)  # Limit concurrent photo downloads
+            
+            async def process_with_semaphore(place, place_type):
+                async with semaphore:
+                    return await process_place(place, place_type, places_collection, images_collection, params.include_photos)
+            
+            attraction_tasks = [
+                process_with_semaphore(place, "attraction")
+                for place in attraction_places
+            ]
+            restaurant_tasks = [
+                process_with_semaphore(place, "restaurant")
+                for place in restaurant_places
+            ]
+            
+            # Gather results
+            attractions = await asyncio.gather(*attraction_tasks)
+            restaurants = await asyncio.gather(*restaurant_tasks)
+            
+            # Filter out None results
+            attractions = [a for a in attractions if a is not None]
+            restaurants = [r for r in restaurants if r is not None]
+            
+            return {
+                "attractions": attractions,
+                "restaurants": restaurants,
+                "total_results": len(attractions) + len(restaurants)
+            }
+            
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching nearby places: {str(e)}")
+
+async def process_place(place, place_type, places_collection, images_collection, include_photos=True):
+    try:
+        place_id = place.get("id")
         
+        # Check if place exists in MongoDB
+        existing_place = await places_collection.find_one({"place_id": place_id})
+        
+        if existing_place:
+            return NearbyLocation(
+                place_id=existing_place["place_id"],
+                name=existing_place["name"],
+                place_type=place_type,
+                location=existing_place["location"],
+                rating=existing_place.get("rating"),
+                vicinity=existing_place.get("vicinity"),
+                photos=existing_place.get("photos", [])[:1]
+            ).to_dict()
+        
+        # Process new place
+        name = place.get("displayName", {}).get("text", "")
+        location = place.get("location", {})
+        rating = place.get("rating")
+        vicinity = place.get("formattedAddress")
+        
+        # Process photos if needed
+        location_photos = []
+        if include_photos and "photos" in place:
+            photo_references = [photo.get("name") for photo in place["photos"] if photo.get("name")]
+            if photo_references:
+                # Process photos in chunks
+                chunk_size = 5
+                for i in range(0, len(photo_references), chunk_size):
+                    chunk = photo_references[i:i + chunk_size]
+                    photos_retriever = RetrievePhotos(chunk, place_id)
+                    photo_responses = await photos_retriever.get_photos()
+                    
+                    # Process photos
+                    for photo_resp in photo_responses:
+                        if photo_resp is not None and hasattr(photo_resp, 'body'):
+                            image_content = base64.b64encode(photo_resp.body).decode('utf-8')
+                            # Store in database
+                            image_doc = {
+                                "place_id": place_id,
+                                "image": image_content,
+                                "content_type": "image/jpeg",
+                                "timestamp": datetime.now()
+                            }
+                            await images_collection.insert_one(image_doc)
+                            
+                            location_photos.append({
+                                "image": image_content,
+                                "content_type": "image/jpeg"
+                            })
+                    
+                    # Add small delay between chunks
+                    if i + chunk_size < len(photo_references):
+                        await asyncio.sleep(0.2)
+        
+        # Create place document
+        place_doc = {
+            "place_id": place_id,
+            "name": name,
+            "place_type": place_type,
+            "location": location,
+            "rating": rating,
+            "vicinity": vicinity,
+            "photos": location_photos,
+            "timestamp": datetime.now()
+        }
+        
+        # Insert place document
+        await places_collection.insert_one(place_doc)
+        
+        return NearbyLocation(
+            place_id=place_id,
+            name=name,
+            place_type=place_type,
+            location=location,
+            rating=rating,
+            vicinity=vicinity,
+            photos=location_photos
+        ).to_dict()
+        
+    except Exception as e:
+        print(f"Error processing place {place.get('id')}: {e}")
+        return None
 
 app.get('cityplaces')
 async def get_city_places(cityname:str, current_user: auth.UserInDB = Depends(current_active_user_dependency)):
