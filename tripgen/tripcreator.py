@@ -40,7 +40,82 @@ class TripCreator:
             api_key="hlN2QjeqJ9hBh2tq1AVvw6O50ilZX4gCfPtbgx6j",
             client_id="41b89c52-b013-41a3-b2a4-f0ca47d68d8b",
             client_secret="IvSD5AfH21DFYh0qHgoqRmLNZIFtyXRM"
+        )
 
+        northeast = bounds['northeast']
+        southwest = bounds['southwest']
+        print(northeast)
+
+        northeast = (northeast['lat'], northeast['lng'])
+        southwest = (southwest['lat'], southwest['lng'])
+        print('Northeast coordinates:', northeast)
+        print('Southwest coordinates:', southwest)
+
+        places = place(placetypes=self.place_types, northeast=northeast, southwest=southwest)
+        result = await places.getAll()
+        print(json.dumps(result['tourist_attraction'], indent=4))
+        prompt = copy.deepcopy(result['tourist_attraction'])
+        finaltour = {}
+        for j in prompt:
+            k = prompt[j]
+            k.pop('photos')
+            finaltour[j] = k
+
+
+        vertexai.init(project='backpackk', location='asia-south1')
+        tools = [
+            Tool.from_google_search_retrieval(
+                google_search_retrieval=generative_models.grounding.GoogleSearchRetrieval(disable_attribution=False)
+            ),
+        ]
+
+        textsi_1 = """
+               give me the response in json style like this
+
+                "Udaigarh Udaipur": {
+                       "name": "Udaigarh Udaipur",
+                       "lat": 24.5789306,
+                       "lng": 73.6827909,
+                       "rating": 4.4,
+                       "number": 1743,
+                       "place_id": \"ChIJPThigWblZzkRFAHsqIB7HOk",
+                       "type": "religious"
+                   },
+                   "Hotel Sarovar - A Boutique Lake Facing Hotel On Lake Pichola": {
+                       "name": \"Hotel Sarovar - A Boutique Lake Facing Hotel On Lake Pichola\",
+                       "lat": 24.5801483,
+                       "lng": 73.6801341,
+                       "rating": 4,
+                       "number": 1129,
+                       "place_id": "ChIJvQBATWblZzkR6UuJd-OjSE8",
+                       "type": "religious"
+                   },
+                   "Authentic art gallery": {
+                       "name": "Authentic art gallery",
+                       "lat": 24.5853644,
+                       "lng": 73.6830902,
+                       "rating": 5,
+                       "number": 2,
+                       "place_id": "ChIJu3lJ7xLlZzkRg13xJEA01Zg",
+                       "type": "museum"
+                   }"""
+
+        generation_config = {
+            "max_output_tokens": 8192,
+            "temperature": 1,
+            "top_p": 0.95,
+
+        }
+        safety_settings = {
+            generative_models.HarmCategory.HARM_CATEGORY_HATE_SPEECH: generative_models.HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+            generative_models.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: generative_models.HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+            generative_models.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: generative_models.HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+            generative_models.HarmCategory.HARM_CATEGORY_HARASSMENT: generative_models.HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+        }
+        model = GenerativeModel(
+            "gemini-1.5-pro-preview-0409",
+            tools=tools,
+            system_instruction=[textsi_1]
         )
         print(len(df_sorted))
         def read_csv(csv):
@@ -91,6 +166,79 @@ class TripCreator:
                     })
         
             return places, food, night_life
+
+        convo = model.start_chat()
+        resp = {}
+        ans = {}
+
+        text = ""
+        for i in range(1, len(self.place_types)):
+            text = text + " " + self.place_types[i]
+        places = 20
+        output = 0
+        js = convo.send_message([f"""
+                                  Suggest me 20 most searched tourist attractions in {self.city_name} from this places data
+
+                                  exclude {text}
+                                  Minimum rating of 4 or above
+                                  Minimum 700 reviews
+                                  Include 1 or 2 lakes if there are any
+                                  
+                                  {finaltour}
+                                  Give the response in json format like this only 
+                                  "Udaigarh Udaipur": 
+                       "name": "Udaigarh Udaipur",
+                       "lat": '24.5789306',
+                       "lng": '73.6827909',
+                       "rating": '4.4',
+                       "number": '1743',
+                       "place_id": "ChIJPThigWblZzkRFAHsqIB7HOk",
+                       "type": "religious"
+                   ,
+                   "Hotel Sarovar - A Boutique Lake Facing Hotel On Lake Pichola": 
+                       "name": "Hotel Sarovar - A Boutique Lake Facing Hotel On Lake Pichola",
+                       "lat": '24.5801483',
+                       "lng": '73.6801341',
+                       "rating": '4',
+                       "number": '1129',
+                       "place_id": "ChIJvQBATWblZzkR6UuJd-OjSE8",
+                       "type": "religious"
+
+                      Exclude temples, cinemas, travel agencies, amusement parks, hotels and buisness
+
+                      Give me 20 places minimum
+                      only give me the json with proper formatting
+                                  """], generation_config=generation_config
+                                ).to_dict()['candidates'][0]['content']['parts'][0]['text']
+
+        print(js)
+        convo.history.clear()
+
+        js = js.replace("json", "")
+        js = js.replace("```", "")
+        finaljson = json.loads(js)
+        filtered_json = {key: result['tourist_attraction'][key] for key in result['tourist_attraction'] if key in finaljson}
+        result['tourist_attraction'] = filtered_json
+        print(json.dumps(result['tourist_attraction'],indent=4))
+
+        df = pd.DataFrame()
+        for types in self.place_types:
+            for item in result[types]:
+                j=[]
+                s = pd.DataFrame(columns=['Name', 'lat', 'lng', 'rating', 'number', 'place_id', 'type','photos'])
+                s['Name'] = [result[types][item]['name']]
+                s['lat'] = [result[types][item]['lat']]
+                s['lng'] = [result[types][item]['lng']]
+                s['rating'] = [result[types][item]['rating']]
+                s['number'] = [result[types][item]['number']]
+                s['place_id'] = [result[types][item]['place_id']]
+                s['type'] = [result[types][item]['type']]
+                for photo in result[types][item]['photos']:
+                    print(photo['name'])
+                    j.append(photo['name'])
+                print(j)
+
+                s['photos'].loc[0] = j
 
 
 

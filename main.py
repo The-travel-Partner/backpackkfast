@@ -12,12 +12,11 @@ import vertexai
 
 from jose import jwt
 from fastapi import FastAPI, Depends, HTTPException, status, Query, Request
-from fastapi import FastAPI, Response
+from fastapi import Response
 from fastapi.security import OAuth2PasswordRequestForm, OAuth2AuthorizationCodeBearer
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 from starlette.middleware.cors import CORSMiddleware
 from starlette.responses import StreamingResponse, HTMLResponse
-
 from tripgen.bestplacesModel import bestPlacesModel
 from tripgen.getplacesModel import getplacesModel
 from tripgen.placesDBClass import placesDBClass
@@ -34,9 +33,7 @@ from authlib.integrations.starlette_client import OAuth, OAuthError
 from starlette.middleware.sessions import SessionMiddleware
 from io import BytesIO
 from PIL import Image
-from motor.motor_asyncio import AsyncIOMotorClient
-from fastapi import FastAPI, HTTPException, BackgroundTasks
-from pydantic import BaseModel, EmailStr
+from fastapi import BackgroundTasks
 import random
 import string
 import smtplib
@@ -60,14 +57,11 @@ apikey= "AIzaSyAt9_35pEEtevoHJCTeJwynPqjx-9-MVjk"
 auth = authenticate(secretkey=SECRET_KEY, algorithm=ALGORITHM, usercollection=usercollection)
 origin_url= "https://backpackk-cloud.el.r.appspot.com/"
 
-
-
 # Initialize Redis manager
 redisClient = RedisManager()
 
 app = FastAPI()
 origins = [
-
     'https://backpackk.com',
     'https://backpackk.com/signup',
     'https://backpackk.com/login',
@@ -84,43 +78,27 @@ origins = [
     "*"
 ]
 app.add_middleware(
-
     CORSMiddleware,
     allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-
 )
 app.add_middleware(
     SessionMiddleware,
     secret_key=SECRET_KEY,
 )
 
-
 async def current_active_user_dependency(current_user: auth.UserInDB = Depends(auth.get_current_user)):
     return await auth.get_current_active_user(current_user)
-
 
 @app.get("/")
 async def root():
     return {"message": "Hello World"}
 
-
 @app.get("/hello/{name}")
 async def say_hello(name: str):
     return {"message": f"Hello {name}"}
-
-
-app.add_middleware(
-
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"]
-)
-
 
 @app.post("/token", response_model=auth.Token)
 async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
@@ -137,20 +115,15 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
     name = existing_user.get('first_name')
     print(name)
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    access_token = auth.create_access_token(
-        data={"sub": user.email}, expires_delta=access_token_expires
-    )
-    response = JSONResponse({"access_token": access_token, "token_type": "bearer", "first_name": name})
-    response.headers["Access-Control-Allow-Origin"] = origin_url
-    return response
+    email = existing_user.get('email')
+    access_token = auth.create_access_token(data={"sub": email}, expires_delta=access_token_expires)
+    return {"access_token": access_token}
 
 
 def generate_verification_token(length=6):
     return ''.join(random.choices(string.ascii_letters + string.digits, k=length))
 
-
 app.add_middleware(
-
     CORSMiddleware,
     allow_origins=origins,
     allow_credentials=True,
@@ -186,7 +159,6 @@ def send_verification_email(user_email, token, user_id):
 
 
 app.add_middleware(
-
     CORSMiddleware,
     allow_origins=origins,
     allow_credentials=True,
@@ -243,75 +215,14 @@ async def read_users_me(current_user: auth.UserInDB = Depends(current_active_use
 
 
 @app.post('/tripgenerator')
-async def generator(param: tripgenModel, request: Request,
-                    current_user: auth.UserInDB = Depends(current_active_user_dependency)):
+async def generator(param: tripgenModel, current_user: auth.UserInDB = Depends(current_active_user_dependency)):
     if current_user:
         city_name = param.city_name
         place_types = param.place_types
         no_of_days = param.no_of_days
-        weekdays = param.weekdays
-        travel_schedule = param.travel_schedule
-        print(place_types)
-        placesCollection = db['placesdata']
-        city = await placesCollection.find_one({"city_name": city_name})
-
-        # Try to get cached data from Redis, with fallback to database
-        js = redisClient.get(current_user.email)
-        if js is None:
-            print("⚠️ Redis unavailable or no cached data found - fetching from database")
-            # Fallback: Try to reconstruct data from database
-            if city:
-                # Create a basic structure from database data
-                final_js = {
-                    'email': current_user.email,
-                    'places': city['places']
-                }
-                print("✅ Using database fallback for places data")
-            else:
-                raise HTTPException(
-                    status_code=400, 
-                    detail="No cached trip data available and city not found in database. Please generate places first using /getplaces endpoint."
-                )
-        else:
-            try:
-                final_js = json.loads(js)
-                print("✅ Using cached data from Redis")
-            except json.JSONDecodeError:
-                print("❌ Invalid JSON in Redis cache, falling back to database")
-                if city:
-                    final_js = {
-                        'email': current_user.email,
-                        'places': city['places']
-                    }
-                else:
-                    raise HTTPException(
-                        status_code=400, 
-                        detail="Corrupted cache data and city not found in database. Please generate places first."
-                    )
-        
-        df_sorted_json = final_js['places']
-        df_sorted = pd.DataFrame(df_sorted_json)
-        trip = TripCreator(request=request, city_name=city_name, place_types=place_types, no_of_days=no_of_days, useremail=current_user.email, placesdb=db, df_sorted=df_sorted, weekday=weekdays, travel_schedule=travel_schedule)
+        trip = TripCreator(city_name=city_name, place_types=place_types, no_of_days=no_of_days)
         new_trip = await trip.create_trip()
-
-        usertripCollection = db['user_trips']
-
-        finaltrip = {'city_name': city_name, 'place_types': place_types, 'no_of_days': no_of_days,"travel_schedule":travel_schedule, 'trip': new_trip}
-        user = await usertripCollection.find_one({"email": current_user.email})
-
-        if user:
-            result = await usertripCollection.update_one(
-                {'email': current_user.email},
-                {'$push': {'trips': finaltrip}}
-            )
-            print(result)
-        else:
-            await usertripCollection.insert_one(
-                {'email': current_user.email, 'trips': [finaltrip]})
-
-        response = JSONResponse(finaltrip)
-        response.headers["Access-Control-Allow-Origin"] = origin_url
-        return response
+        return new_trip
 
 
 import os
@@ -337,6 +248,23 @@ async def find_or_create_user(email, first_name, last_name='nil'):
 
 
 secret_key = os.getenv("SESSION_SECRET_KEY", "default_fallback_secret_key")
+origins = [
+    "http://localhost:5173",
+    "localhost:5173",
+    "http://localhost:5173/signup",
+    "http://localhost:5173/login"
+]
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=SECRET_KEY,
+)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"]
+)
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import RedirectResponse
@@ -407,8 +335,7 @@ async def google_callback(code: str):
         else:
             user = await find_or_create_user(email, first_name)
         temp_token = generate_temp_token(email)
-        response = RedirectResponse(f'https://backpackk.com/intermediate?token={temp_token}')
-        response.headers["Access-Control-Allow-Origin"] = origin_url
+        response = RedirectResponse(f'http://localhost:5173/intermediate?token={temp_token}')
         return response
 
 
@@ -425,9 +352,7 @@ async def verify_temp_token(param: VerifyToken):
         access_token = auth.create_access_token(
             data={"sub": email}, expires_delta=access_token_expires
         )
-        response = JSONResponse({"access_token": access_token, 'first_name': name})
-        response.headers["Access-Control-Allow-Origin"] = origin_url
-        return response
+        return {"access_token": access_token}
 
 
 from jose import jwt
@@ -570,7 +495,6 @@ async def autocomplete_city_name(query: str = Query(..., min_length=1, descripti
     response = JSONResponse({'cities': city_names})
     response.headers["Access-Control-Allow-Origin"] = origin_url
     return response
-
 @app.post("/number/of/available/days")
 async def numberofdays(param: tripgenModel, request: Request,
                     current_user: auth.UserInDB = Depends(current_active_user_dependency)):
@@ -716,7 +640,7 @@ async def getplaces(cityname: str, current_user: auth.UserInDB = Depends(current
         print(type(city))
         return JSONResponse(city['places'])
 @app.get("/getphoto")
-async def get_photo(name: str, request: Request, current_user: auth.UserInDB = Depends(current_active_user_dependency)):
+async def get_photo(name: str, current_user: auth.UserInDB = Depends(current_active_user_dependency)):
     if current_user:
 
         print(name)
@@ -1530,7 +1454,3 @@ async def get_my_posts(current_user: auth.UserInDB = Depends(current_active_user
         post["_id"] = str(post["_id"])
         user_posts.append(post)
     return {"posts": user_posts}
-
-
-    
-    
