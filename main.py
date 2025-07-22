@@ -1378,6 +1378,159 @@ async def get_city_places(cityname:str, current_user: auth.UserInDB = Depends(cu
         raise HTTPException(status_code=500, detail=f"Error fetching city places: {str(e)}")
 
 
+class AdminUserCreate(BaseModel):
+    email: EmailStr
+    password: str
+    first_name: str
+    last_name: str
+    secret: str
+
+@app.post("/admin/create-user")
+async def admin_create_user(
+    user_data: AdminUserCreate,
+):
+    # Check if the current user is an admin
+    if user_data.secret != "backpackkRogueported":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only administrators can create users manually"
+        )
     
+    # Check if user already exists
+    existing_user = await usercollection.find_one({"email": user_data.email})
+    if existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User with this email already exists"
+        )
+    
+    # Create new user
+    hashed_password = auth.get_password_hash(user_data.password)
+    user_dict = {
+        "email": user_data.email,
+        "first_name": user_data.first_name,
+        "last_name": user_data.last_name,
+        "hashed_password": hashed_password,
+        "disabled": False,
+        "verified": True,  # Admin-created users are automatically verified
+    }
+    
+    new_user = await usercollection.insert_one(user_dict)
+    created_user = await usercollection.find_one({"_id": new_user.inserted_id})
+    
+    # Remove sensitive information before returning
+    created_user.pop("hashed_password", None)
+    created_user.pop("verification_token", None)
+    
+    response = JSONResponse({
+        "message": "User created successfully",
+    })
+    response.headers["Access-Control-Allow-Origin"] = origin_url
+    return response
+
+
+    
+    
+
+# --- Minimal Social Feed Endpoints ---
+from pydantic import BaseModel
+from typing import Optional
+
+class CommunityCreate(BaseModel):
+    name: str
+    description: Optional[str] = None
+
+class PostCreate(BaseModel):
+    content: str
+    community_id: Optional[str] = None
+
+class CommentCreate(BaseModel):
+    content: str
+
+@app.post("/communities")
+async def create_community(param: CommunityCreate, current_user: auth.UserInDB = Depends(current_active_user_dependency)):
+    communities = db['communities']
+    community = {
+        "name": param.name,
+        "description": param.description,
+        "creator": current_user.email,
+        "members": [current_user.email],
+        "created_at": datetime.utcnow()
+    }
+    result = await communities.insert_one(community)
+    return {"id": str(result.inserted_id), "message": "Community created"}
+
+@app.post("/posts")
+async def create_post(param: PostCreate, current_user: auth.UserInDB = Depends(current_active_user_dependency)):
+    posts = db['posts']
+    post = {
+        "content": param.content,
+        "community_id": param.community_id,
+        "author": current_user.email,
+        "created_at": datetime.utcnow(),
+        "likes": [],
+        "comments": [],
+        "shares": 0
+    }
+    result = await posts.insert_one(post)
+    return {"id": str(result.inserted_id), "message": "Post created"}
+
+@app.post("/posts/{post_id}/like")
+async def like_post(post_id: str, current_user: auth.UserInDB = Depends(current_active_user_dependency)):
+    posts = db['posts']
+    await posts.update_one(
+        {"_id": ObjectId(post_id)},
+        {"$addToSet": {"likes": current_user.email}}
+    )
+    return {"message": "Post liked"}
+
+@app.post("/posts/{post_id}/comment")
+async def comment_post(post_id: str, param: CommentCreate, current_user: auth.UserInDB = Depends(current_active_user_dependency)):
+    comments = db['comments']
+    comment = {
+        "post_id": post_id,
+        "author": current_user.email,
+        "content": param.content,
+        "created_at": datetime.utcnow()
+    }
+    result = await comments.insert_one(comment)
+    posts = db['posts']
+    await posts.update_one(
+        {"_id": ObjectId(post_id)},
+        {"$push": {"comments": str(result.inserted_id)}}
+    )
+    return {"id": str(result.inserted_id), "message": "Comment added"}
+
+@app.post("/posts/{post_id}/share")
+async def share_post(post_id: str, current_user: auth.UserInDB = Depends(current_active_user_dependency)):
+    posts = db['posts']
+    await posts.update_one(
+        {"_id": ObjectId(post_id)},
+        {"$inc": {"shares": 1}}
+    )
+    return {"message": "Post shared"}
+
+@app.get("/feed")
+async def get_feed(skip: int = 0, limit: int = 10, current_user: auth.UserInDB = Depends(current_active_user_dependency)):
+    posts = db['posts']
+    cursor = posts.find().sort("created_at", -1).skip(skip).limit(limit)
+    feed = []
+    async for post in cursor:
+        post["_id"] = str(post["_id"])
+        feed.append(post)
+    return {"feed": feed}
+
+
+@app.get("/my-posts")
+async def get_my_posts(current_user: auth.UserInDB = Depends(current_active_user_dependency)):
+    posts = db['posts']
+    cursor = posts.find({"author": current_user.email}).sort("created_at", -1)
+    user_posts = []
+    async for post in cursor:
+        post["_id"] = str(post["_id"])
+        user_posts.append(post)
+    return {"posts": user_posts}
+
+
     
     

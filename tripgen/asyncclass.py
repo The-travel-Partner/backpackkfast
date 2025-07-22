@@ -70,6 +70,7 @@ class retrieveplace:
                 "place_id": place_id,
                 "type": place_type,
                 "opening_hours": place.get('regularOpeningHours', {}).get('weekdayDescriptions', []),
+                "reviews": place.get('reviews', [])
                
             }
             
@@ -127,7 +128,7 @@ class retrieveplace:
                 headers = {
                     "Content-Type": "application/json",
                     "X-Goog-Api-Key": "AIzaSyAt9_35pEEtevoHJCTeJwynPqjx-9-MVjk",
-                    "X-Goog-FieldMask": "places.id,places.location,places.rating,places.userRatingCount,places.types,places.photos,places.displayName,places.regularOpeningHours",
+                    "X-Goog-FieldMask": "places.id,places.location,places.rating,places.userRatingCount,places.types,places.photos,places.displayName,places.regularOpeningHours,places.reviews",
                 }
                 
                 data = {
@@ -177,7 +178,7 @@ class retrieveplace:
                 headers = {
                     "Content-Type": "application/json",
                     "X-Goog-Api-Key": "AIzaSyAt9_35pEEtevoHJCTeJwynPqjx-9-MVjk",
-                    "X-Goog-FieldMask": "places.id,places.location,places.rating,places.userRatingCount,places.types,places.photos,places.displayName,places.regularOpeningHours",
+                    "X-Goog-FieldMask": "places.id,places.location,places.rating,places.userRatingCount,places.types,places.photos,places.displayName,places.regularOpeningHours,places.reviews",
                 }
                 
                 data = {
@@ -227,7 +228,7 @@ class retrieveplace:
                 headers = {
                     "Content-Type": "application/json",
                     "X-Goog-Api-Key": "AIzaSyAt9_35pEEtevoHJCTeJwynPqjx-9-MVjk",
-                    "X-Goog-FieldMask": "places.id,places.location,places.rating,places.userRatingCount,places.types,places.photos,places.displayName,places.regularOpeningHours",
+                    "X-Goog-FieldMask": "places.id,places.location,places.rating,places.userRatingCount,places.types,places.photos,places.displayName,places.regularOpeningHours,places.reviews",
                 }
                 
                 data = {
