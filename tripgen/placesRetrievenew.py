@@ -116,6 +116,7 @@ class placesRetrieve:
                 s['place_id'] = [result[types][item]['place_id']]
                 s['type'] = [result[types][item]['type']]
                 s['opening_hours'] = [result[types][item]['opening_hours']]
+                s['reviews'] = [result[types][item]['reviews']]
                 
                 # We're no longer fetching photos
                 

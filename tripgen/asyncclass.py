@@ -59,7 +59,6 @@ class retrieveplace:
             lng = place.get('location', {}).get('longitude')
             rating = place.get('rating', 0)
             user_ratings_total = place.get('userRatingCount', 0)
-            
             # Create place data immediately
             place_data = {
                 "name": name,
@@ -70,9 +69,8 @@ class retrieveplace:
                 "place_id": place_id,
                 "type": place_type,
                 "opening_hours": place.get('regularOpeningHours', {}).get('weekdayDescriptions', []),
-               
+                "reviews": place.get('reviews', [])
             }
-            
             # Handle photos asynchronously if they exist
             if 'photos' in place:
                 photo_references = [photo.get('name') for photo in place['photos'] if photo.get('name')]
@@ -81,8 +79,6 @@ class retrieveplace:
                     task = asyncio.create_task(self.process_photos_async(photo_references, place_id, images_collection))
                     self.background_tasks.add(task)
                     task.add_done_callback(self.background_tasks.discard)
-                    
-                                
             return name, place_data
         except Exception as e:
             print(f"Error processing place: {e}")
@@ -127,7 +123,7 @@ class retrieveplace:
                 headers = {
                     "Content-Type": "application/json",
                     "X-Goog-Api-Key": "AIzaSyAt9_35pEEtevoHJCTeJwynPqjx-9-MVjk",
-                    "X-Goog-FieldMask": "places.id,places.location,places.rating,places.userRatingCount,places.types,places.photos,places.displayName,places.regularOpeningHours",
+                    "X-Goog-FieldMask": "places.id,places.location,places.rating,places.userRatingCount,places.types,places.photos,places.displayName,places.regularOpeningHours,places.reviews",
                 }
                 
                 data = {
@@ -177,7 +173,7 @@ class retrieveplace:
                 headers = {
                     "Content-Type": "application/json",
                     "X-Goog-Api-Key": "AIzaSyAt9_35pEEtevoHJCTeJwynPqjx-9-MVjk",
-                    "X-Goog-FieldMask": "places.id,places.location,places.rating,places.userRatingCount,places.types,places.photos,places.displayName,places.regularOpeningHours",
+                    "X-Goog-FieldMask": "places.id,places.location,places.rating,places.userRatingCount,places.types,places.photos,places.displayName,places.regularOpeningHours,places.reviews",
                 }
                 
                 data = {
@@ -227,7 +223,7 @@ class retrieveplace:
                 headers = {
                     "Content-Type": "application/json",
                     "X-Goog-Api-Key": "AIzaSyAt9_35pEEtevoHJCTeJwynPqjx-9-MVjk",
-                    "X-Goog-FieldMask": "places.id,places.location,places.rating,places.userRatingCount,places.types,places.photos,places.displayName,places.regularOpeningHours",
+                    "X-Goog-FieldMask": "places.id,places.location,places.rating,places.userRatingCount,places.types,places.photos,places.displayName,places.regularOpeningHours,places.reviews",
                 }
                 
                 data = {
@@ -345,15 +341,16 @@ class place(retrieveplace):
         self.museum = super().duplicateremover(res)
         return self.museum
 
-    async def nightlife(self,place):
-        res = await super().other(self.session,place_type=place)
+    async def nightlife(self, place):
+        res = await super().other(self.session, place_type=place)
         self.night_life.update(super().duplicateremover(res))
         return self.night_life
 
     async def religious(self, place):
-        res = await super().other(self.session,place_type=place)
+        res = await super().other(self.session, place_type=place)
         self.religiousplace.update(super().duplicateremover(res))
         return self.religiousplace
+
 
     async def zoos(self):
         index = self.types.index("zoo")
@@ -393,10 +390,7 @@ class place(retrieveplace):
                
                 self.result[f'{place}'] = res
             elif place == "hindu_temple" or place == "mosque" or place == "church":
-
                 res = await self.religious(place)
-                self.religiousplace = copy.deepcopy(res)
-               
                 self.result[f"{place}"] = res
             elif place == "zoo":
                 res = await self.zoos()
