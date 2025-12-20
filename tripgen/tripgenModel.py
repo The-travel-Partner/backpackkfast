@@ -14,3 +14,8 @@ class getPhotos(BaseModel):
 
 class getPhotosByPlaceId(BaseModel):
     place_id: str
+
+
+class UpsertPhotosRequest(BaseModel):
+    place_id: str
+    photo_references: List[str]

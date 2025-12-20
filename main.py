@@ -42,25 +42,31 @@ from email.mime.multipart import MIMEMultipart
 from bson.objectid import ObjectId
 from Redis import RedisManager
 from tripgen.asyncclass import place
+from models import TripGenerationData
+from trip_time_recalculator import TripTimeRecalculator
+from config import placeTypes
+# Import configuration from config.py
+from config import (
+    mongostr, client, db, usercollection,
+    SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES,
+    apikey, auth, origin_url, SERPAPI_KEY
+)
 
-mongostr = "mongodb+srv://admin:C5Qt4vWNogmRSlVi@backpackk.tmkdask.mongodb.net/"
-client = AsyncIOMotorClient(mongostr)
-db = client['backpackk']
-usercollection = db['users']
-
-from authenticate.authentication import authenticate
-
-SECRET_KEY = "83daa0256a2289b0fb23693bf1f6034d44396675749244721a2b20e896e11662"
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 43800
-apikey= "AIzaSyAt9_35pEEtevoHJCTeJwynPqjx-9-MVjk"
-auth = authenticate(secretkey=SECRET_KEY, algorithm=ALGORITHM, usercollection=usercollection)
-origin_url= "https://backpackk-cloud.el.r.appspot.com/"
+from strawberry.fastapi import GraphQLRouter
+from graphql_schema import schema
+from flight_models import FlightSearchRequest
 
 # Initialize Redis manager
 redisClient = RedisManager()
 
 app = FastAPI()
+
+# Create GraphQL router
+graphql_app = GraphQLRouter(schema, graphiql=True)
+
+# Mount GraphQL at /graphql endpoint
+app.include_router(graphql_app, prefix="/graphql")
+
 origins = [
     'https://backpackk.com',
     'https://backpackk.com/signup',
@@ -89,8 +95,7 @@ app.add_middleware(
     secret_key=SECRET_KEY,
 )
 
-async def current_active_user_dependency(current_user: auth.UserInDB = Depends(auth.get_current_user)):
-    return await auth.get_current_active_user(current_user)
+
 
 @app.get("/")
 async def root():
@@ -117,7 +122,11 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     email = existing_user.get('email')
     access_token = auth.create_access_token(data={"sub": email}, expires_delta=access_token_expires)
-    return {"access_token": access_token}
+    return {
+        "access_token": access_token,
+          "token_type": "bearer",
+        "first_name": name
+        }
 
 
 def generate_verification_token(length=6):
@@ -167,6 +176,10 @@ app.add_middleware(
 )
 
 
+
+async def current_active_user_dependency(current_user: auth.UserInDB = Depends(auth.get_current_user)):
+    return await auth.get_current_active_user(current_user)
+
 @app.post("/register")
 async def register_user(user: auth.UserCreate, background_tasks: BackgroundTasks):
     existing_user = await usercollection.find_one({"email": user.email})
@@ -215,12 +228,15 @@ async def read_users_me(current_user: auth.UserInDB = Depends(current_active_use
 
 
 @app.post('/tripgenerator')
-async def generator(param: tripgenModel, current_user: auth.UserInDB = Depends(current_active_user_dependency)):
+async def generator(request: Request, param: tripgenModel, current_user: auth.UserInDB = Depends(current_active_user_dependency)):
     if current_user:
+        
         city_name = param.city_name
         place_types = param.place_types
+        travel_schedule = param.travel_schedule
         no_of_days = param.no_of_days
-        trip = TripCreator(city_name=city_name, place_types=place_types, no_of_days=no_of_days)
+        weekday = param.weekdays
+        trip = TripCreator(city_name=city_name, place_types=place_types,placesdb=db,weekday=weekday, travel_schedule=travel_schedule, useremail=current_user.email, request=request, no_of_days=no_of_days)
         new_trip = await trip.create_trip()
         return new_trip
 
@@ -252,7 +268,9 @@ origins = [
     "http://localhost:5173",
     "localhost:5173",
     "http://localhost:5173/signup",
-    "http://localhost:5173/login"
+    "http://localhost:5173/login",
+    "http://localhost:3000",
+    "localhost:3000"
 ]
 app.add_middleware(
     SessionMiddleware,
@@ -562,7 +580,7 @@ async def getplaces(param: getplacesModel, request: Request,current_user: auth.U
        placesCollection = db['placesdata']
        city = await placesCollection.find_one({"city_name": city_name})
        places = placesRetrieve(request=request, city_name=city_name, place_types=place_types,useremail=useremail,placesdb=db)
-       finalPlaces,placesdata =await  places.getplaces()
+       finalPlaces,placesdata =await  places.get_all_places()
        print(json.dumps(finalPlaces.to_json(), indent=4)) 
        timestamp = f"{str(time.localtime().tm_mon)},{str(time.localtime().tm_year)}"
        places = {'city_name': city_name, "timestamp": timestamp, 'places': placesdata}
@@ -609,17 +627,8 @@ async def getplaces(cityname: str, current_user: auth.UserInDB = Depends(current
             southwest = (southwest['lat'], southwest['lng'])
             print('Northeast coordinates:', northeast)
             print('Southwest coordinates:', southwest)
-            places = place(placetypes=[
-                        "museum",
-                        "tourist_attraction",
-                        "hindu_temple",
-                        "zoo",
-                        "night_club",
-                        "bar",
-                        "restaurant",
-                        "vegetarian_restaurant"
-                    ], northeast=northeast,southwest=southwest,placesdb=db)
-            result = await places.getAll()
+            places = place(placetypes=placeTypes, northeast=northeast,southwest=southwest,placesdb=db)
+            result = await places.get_all_places()
             timestamp = f"{str(time.localtime().tm_mon)},{str(time.localtime().tm_year)}"
             places = {'city_name': city_name, "timestamp": timestamp, 'places': result}
             if city is None:
@@ -666,33 +675,87 @@ async def get_photo(name: str, current_user: auth.UserInDB = Depends(current_act
 
 from contactModel import contactModel
 from tripgen.asyncclass import RetrievePhotos
-from tripgen.tripgenModel import getPhotos
+from tripgen.tripgenModel import getPhotos, UpsertPhotosRequest
+from cloudflare_cdn import upload_images_batch
+
 @app.post("/getphotos")
 async def getPhotos(param: getPhotos):
     photoref = param.photoref
     print(photoref)
     photos = RetrievePhotos(photoref)
     images = await photos.get_photos()
-    image_bytes=''
+    
+    # Collect raw image bytes for Cloudflare upload
+    raw_images = []
     base64_images = []
+    
     for response in images:
-
+        image_bytes = b''
+        
         if hasattr(response, 'body'):
             image_bytes = response.body
-
         elif hasattr(response, 'content'):
             image_bytes = response.content
+        
+        if image_bytes:
+            raw_images.append(image_bytes)
+            # Keep base64 as fallback
+            base64_images.append({
+                "image": base64.b64encode(image_bytes).decode('utf-8') if isinstance(image_bytes, bytes) else image_bytes,
+                "content_type": "image/jpeg"
+            })
+    
+    # Upload images to Cloudflare CDN
+    cdn_results = []
+    if raw_images:
+        print(f"📤 Uploading {len(raw_images)} images to Cloudflare CDN...")
+        cdn_results = await upload_images_batch(raw_images)
+        print(f"✅ Successfully uploaded {len(cdn_results)} images to CDN")
+    
+    # Return both CDN URLs and base64 fallback
+    response_images = []
+    for i, base64_img in enumerate(base64_images):
+        img_data = {
+            "image": base64_img["image"],
+            "content_type": base64_img["content_type"]
+        }
+        # Add CDN URL if available
+        if i < len(cdn_results):
+            img_data["cdn_url"] = cdn_results[i]["url"]
+            img_data["cdn_id"] = cdn_results[i]["id"]
+        response_images.append(img_data)
+    
+    print(f"📸 Returning {len(response_images)} images")
+    return {"images": response_images}
 
 
-        # Create complete data URI
-        print(type(image_bytes))
+@app.post("/upsertphotos")
+async def upsertPhotos(param: UpsertPhotosRequest):
+    """
+    Dispatch image processing to Celery background task.
+    Returns immediately with task_id for tracking.
+    """
+    from tasks import upsert_images_task
+    
+    place_id = param.place_id
+    photo_references = param.photo_references
+    
+    print(f"📷 Dispatching {len(photo_references)} photos for place_id: {place_id} to Celery")
+    
+    # Dispatch to Celery task
+    task = upsert_images_task.delay(place_id, photo_references)
+    
+    return {
+        "success": True,
+        "message": "Image processing started",
+        "task_id": task.id,
+        "place_id": place_id,
+        "photos_queued": len(photo_references),
+        "status": "processing"
+    }
 
-        base64_images.append({
-            "image": image_bytes,
-            "content_type": "image/jpeg"  # Adjust if using different image format
-        })
-    print(len(base64_images))
-    return {"images": base64_images}
+
+
 from tripgen.tripgenModel import getPhotosByPlaceId
 @app.post("/getphotos/byplaceid")
 async def getPhotosByPlaceId(param: getPhotosByPlaceId):
@@ -1454,3 +1517,215 @@ async def get_my_posts(current_user: auth.UserInDB = Depends(current_active_user
         post["_id"] = str(post["_id"])
         user_posts.append(post)
     return {"posts": user_posts}
+
+import json
+@app.post("/trips/modify")
+async def modify_trip(trip: TripGenerationData, current_user: auth.UserInDB = Depends(current_active_user_dependency)):
+    try:
+        # Log the received trip data
+        print(f"User {current_user.email} modifying trip for {trip.city_name}")
+        
+        # Convert Pydantic model to dictionary for processing
+        trip_data = trip.model_dump()
+        
+        # Check if we have trip data in the new format (direct days) or old format (with 'trip' wrapper)
+        has_trip_wrapper = 'trip' in trip_data and trip_data['trip']
+        has_direct_days = any(key.startswith('Day ') for key in trip_data.keys())
+        
+        if not has_trip_wrapper and not has_direct_days:
+            raise HTTPException(
+                status_code=400,
+                detail="Trip data is required for modification. Expected either 'trip' wrapper with days or direct day data."
+            )
+        
+        # Initialize the trip time recalculator
+        recalculator = TripTimeRecalculator()
+        
+        # Extract parameters needed for recalculation
+        travel_schedule = trip_data.get('travel_schedule', 'Explorer')
+        place_types = trip_data.get('place_types', [])
+        
+        print(f"Recalculating timings for {travel_schedule} schedule with {len(place_types)} place types")
+        
+        # Determine which structure we're working with and recalculate accordingly
+        if has_trip_wrapper:
+            # Old structure with trip wrapper
+            print("Processing old structure with 'trip' wrapper")
+            updated_trip_data = await recalculator.recalculate_trip_timing(
+                trip_data.get('trip', {}),
+                travel_schedule,
+                place_types
+            )
+            trip_data['trip'] = updated_trip_data
+            days_processed = len(updated_trip_data)
+        else:
+            # New structure with direct days
+            print("Processing new continuous structure with direct days")
+            # Extract only the day data for processing
+            day_data = {k: v for k, v in trip_data.items() if k.startswith('Day ')}
+            updated_day_data = await recalculator.recalculate_trip_times(day_data)
+            
+            # Update the trip data with recalculated day data
+            for day_key, day_info in updated_day_data.items():
+                trip_data[day_key] = day_info
+            
+            days_processed = len(updated_day_data)
+        
+        print(f"Trip times recalculated successfully for {days_processed} days")
+        
+        # Return the modified trip with updated timings
+        response = JSONResponse({
+            "success": True,
+            "message": "Trip modified and times recalculated successfully",
+            "trip_data": trip_data,
+            "user": current_user.email,
+            "recalculation_info": {
+                "travel_schedule": travel_schedule,
+                "place_types": place_types,
+                "days_processed": days_processed,
+                "structure_type": "trip_wrapper" if has_trip_wrapper else "continuous_days"
+            }
+        })
+        response.headers["Access-Control-Allow-Origin"] = origin_url
+        return response
+        
+    except HTTPException:
+        # Re-raise HTTP exceptions as-is
+        raise
+    except Exception as e:
+        print(f"Error modifying trip for user {current_user.email}: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to modify trip: {str(e)}"
+        )
+
+
+# ============================================================================
+# FLIGHTS ENDPOINT - SerpAPI Google Flights Integration
+# ============================================================================
+
+@app.post("/flights/search")
+async def search_flights(
+    flight_request: FlightSearchRequest,
+    current_user: auth.UserInDB = Depends(current_active_user_dependency)
+):
+    """
+    Search for flights using SerpAPI Google Flights API.
+    
+    This endpoint allows authenticated users to search for flights between
+    two locations with various search parameters.
+    
+    Args:
+        flight_request: FlightSearchRequest containing search parameters
+        current_user: Authenticated user
+        
+    Returns:
+        JSONResponse with flight search results including:
+        - best_flights: Top recommended flights
+        - other_flights: Alternative flight options
+        - price_insights: Price trends and recommendations
+        - airports: Departure and arrival airport information
+    
+    Raises:
+        HTTPException 401: If SERPAPI_KEY is not configured
+        HTTPException 400: If search parameters are invalid
+        HTTPException 500: If SerpAPI request fails
+    """
+    try:
+        # Check if API key is configured
+        if not SERPAPI_KEY:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="SerpAPI key not configured. Please add SERPAPI_KEY to environment variables."
+            )
+        
+        from serpapi import GoogleSearch
+        
+        # Build search parameters for SerpAPI
+        search_params = {
+            "engine": "google_flights",
+            "api_key": SERPAPI_KEY,
+            "departure_id": flight_request.departure_id,
+            "arrival_id": flight_request.arrival_id,
+            "outbound_date": flight_request.outbound_date,
+            "type": flight_request.type,
+            "travel_class": flight_request.travel_class,
+            "adults": flight_request.adults,
+            "children": flight_request.children,
+            "infants_in_seat": flight_request.infants_in_seat,
+            "infants_on_lap": flight_request.infants_on_lap,
+            "currency": flight_request.currency,
+            "gl": flight_request.gl,
+            "hl": flight_request.hl,
+            "sort_by": flight_request.sort_by
+        }
+        
+        # Add return date if provided (required for round trip)
+        if flight_request.return_date:
+            search_params["return_date"] = flight_request.return_date
+        elif flight_request.type == 1:  # Round trip requires return date
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="return_date is required for round trip flights (type=1)"
+            )
+        
+        print(f"🛫 User {current_user.email} searching flights: {flight_request.departure_id} → {flight_request.arrival_id}")
+        print(f"   Dates: {flight_request.outbound_date} - {flight_request.return_date or 'N/A'}")
+        
+        # Make request to SerpAPI
+        search = GoogleSearch(search_params)
+        results = search.get_dict()
+        
+        # Check for errors in response
+        if "error" in results:
+            error_message = results.get("error", "Unknown error from SerpAPI")
+            print(f"❌ SerpAPI error: {error_message}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Flight search failed: {error_message}"
+            )
+        
+        # Extract relevant flight data
+        flight_data = {
+            "search_parameters": results.get("search_parameters", {}),
+            "best_flights": results.get("best_flights", []),
+            "other_flights": results.get("other_flights", []),
+            "price_insights": results.get("price_insights", {}),
+            "airports": results.get("airports", []),
+            "user": current_user.email,
+            "search_metadata": {
+                "total_results": len(results.get("best_flights", [])) + len(results.get("other_flights", [])),
+                "currency": flight_request.currency,
+                "search_timestamp": datetime.utcnow().isoformat()
+            }
+        }
+        
+        print(f"✅ Found {flight_data['search_metadata']['total_results']} flights")
+        
+        # Return flight results with CORS headers
+        response = JSONResponse(content=flight_data, status_code=200)
+        response.headers["Access-Control-Allow-Origin"] = origin_url
+        return response
+        
+    except HTTPException:
+        # Re-raise HTTP exceptions as-is
+        raise
+    except ImportError:
+        print("❌ SerpAPI library not installed")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="SerpAPI library not installed. Please run: pip install google-search-results"
+        )
+    except Exception as e:
+        print(f"❌ Error searching flights for user {current_user.email}: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to search flights: {str(e)}"
+        )
+

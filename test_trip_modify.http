@@ -1,0 +1,93 @@
+### Test trip modification endpoint
+### First, you need to get an access token by logging in
+
+### Login to get access token
+POST http://localhost:8000/token
+Content-Type: application/x-www-form-urlencoded
+
+username=your_email@example.com&password=your_password
+
+### Use the access token from login response to test trip modification
+POST http://localhost:8000/trips/modify
+Content-Type: application/json
+Authorization: Bearer YOUR_ACCESS_TOKEN_HERE
+
+{
+  "city_name": "Udaipur, Rajasthan, India",
+  "place_types": ["museum", "tourist_attraction", "hindu_temple"],
+  "no_of_days": 1,
+  "travel_schedule": "Explorer",
+  "weekdays": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"],
+  "trip": {
+    "Day 1": {
+      "Name": {
+        "0": "Wax Museum Udaipur",
+        "1": "Sajjangarh Monsoon Palace"
+      },
+      "lat": {
+        "0": 24.5953732,
+        "1": 24.5931853
+      },
+      "lng": {
+        "0": 73.6872296,
+        "1": 73.6396056
+      },
+      "Weekday": "Tuesday",
+      "Lunch": {
+        "Name": {"0": "Bawarchi Restaurant"},
+        "lat": {"0": 24.5849393},
+        "lng": {"0": 73.6952694}
+      },
+      "Dinner": {
+        "Name": {"0": "Natraj Dining Hall"},
+        "lat": {"0": 24.5723618},
+        "lng": {"0": 73.6996646}
+      },
+      "Night": {
+        "Name": {"0": "Rootage Restaurant"},
+        "lat": {"0": 24.5805783},
+        "lng": {"0": 73.6968648}
+      }
+    }
+  }
+}
+
+### Alternative with Leisure schedule
+POST http://localhost:8000/trips/modify
+Content-Type: application/json
+Authorization: Bearer YOUR_ACCESS_TOKEN_HERE
+
+{
+  "city_name": "Udaipur, Rajasthan, India",
+  "place_types": ["museum", "tourist_attraction", "hindu_temple"],
+  "no_of_days": 1,
+  "travel_schedule": "Leisure",
+  "weekdays": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"],
+  "trip": {
+    "Day 1": {
+      "Name": {
+        "0": "City Palace",
+        "1": "Lake Pichola"
+      },
+      "lat": {
+        "0": 24.5758772,
+        "1": 24.5743159
+      },
+      "lng": {
+        "0": 73.6837225,
+        "1": 73.6810341
+      },
+      "Weekday": "Tuesday",
+      "Lunch": {
+        "Name": {"0": "Ambrai Restaurant"},
+        "lat": {"0": 24.5710786},
+        "lng": {"0": 73.6810341}
+      },
+      "Dinner": {
+        "Name": {"0": "1559 AD"},
+        "lat": {"0": 24.5758772},
+        "lng": {"0": 73.6837225}
+      }
+    }
+  }
+}

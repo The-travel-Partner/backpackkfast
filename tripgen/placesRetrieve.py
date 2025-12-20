@@ -115,8 +115,8 @@ class placesRetrieve:
             
             client = genai.Client(
                 vertexai=True,
-                project="backpackk-delegate",
-                location="us-central1",
+                project="backpackk",
+                location="asia-south1",
             )
             from google.genai import types
             tools = [
@@ -154,7 +154,7 @@ class placesRetrieve:
                                        "type": "museum"
                                    }"""
 
-            model = "gemini-2.5-pro-preview-03-25"
+            model = "gemini-2.5-flash"
             contents = [
                 types.Content(
                     role="user",
@@ -219,15 +219,106 @@ class placesRetrieve:
                 response_text += chunk.text
 
             js = response_text
+            print("Raw response from Gemini:")
             print(js)
 
-            js = js.replace("json", "")
-            js = js.replace("```", "")
-            finaljson = json.loads(js)
-            print(json.dumps(finaljson, indent=4))
-            print('hello')
+            # Robust JSON cleaning and extraction
+            def clean_and_extract_json(text):
+                """
+                Clean and extract JSON from Gemini response with multiple fallback strategies
+                """
+                try:
+                    # Remove common markdown formatting
+                    cleaned_text = text.replace("```json", "").replace("```", "")
+                    
+                    # Remove any leading/trailing whitespace
+                    cleaned_text = cleaned_text.strip()
+                    
+                    # Check if we have any content at all
+                    if not cleaned_text:
+                        print("Empty response from Gemini")
+                        return {}
+                    
+                    # Try to find JSON content between curly braces
+                    import re
+                    
+                    # Strategy 1: Look for complete JSON object from first { to last }
+                    json_match = re.search(r'\{.*\}', cleaned_text, re.DOTALL)
+                    if json_match:
+                        json_str = json_match.group(0)
+                        try:
+                            return json.loads(json_str)
+                        except json.JSONDecodeError:
+                            print("Strategy 1 failed, trying strategy 2...")
+                    
+                    # Strategy 2: Find the largest valid JSON object
+                    brace_count = 0
+                    start_idx = -1
+                    end_idx = -1
+                    
+                    for i, char in enumerate(cleaned_text):
+                        if char == '{':
+                            if start_idx == -1:
+                                start_idx = i
+                            brace_count += 1
+                        elif char == '}':
+                            brace_count -= 1
+                            if brace_count == 0 and start_idx != -1:
+                                end_idx = i
+                                break
+                    
+                    if start_idx != -1 and end_idx != -1:
+                        json_str = cleaned_text[start_idx:end_idx + 1]
+                        try:
+                            return json.loads(json_str)
+                        except json.JSONDecodeError:
+                            print("Strategy 2 failed, trying strategy 3...")
+                    
+                    # Strategy 3: Line by line cleaning and reconstruction
+                    lines = cleaned_text.split('\n')
+                    cleaned_lines = []
+                    in_json = False
+                    
+                    for line in lines:
+                        line = line.strip()
+                        if line.startswith('{') or in_json:
+                            in_json = True
+                            # Remove any non-JSON text at the beginning of lines
+                            if ':' in line or '}' in line or '{' in line or line.startswith('"'):
+                                cleaned_lines.append(line)
+                        if line.endswith('}') and in_json:
+                            break
+                    
+                    if cleaned_lines:
+                        reconstructed_json = '\n'.join(cleaned_lines)
+                        try:
+                            return json.loads(reconstructed_json)
+                        except json.JSONDecodeError:
+                            print("Strategy 3 failed, trying strategy 4...")
+                    
+                    # Strategy 4: Try to parse as-is after basic cleaning
+                    try:
+                        return json.loads(cleaned_text)
+                    except json.JSONDecodeError:
+                        print("All JSON parsing strategies failed")
+                        return {}
+                        
+                except Exception as e:
+                    print(f"Error in JSON cleaning: {e}")
+                    return {}
+            
+            # Use the robust JSON extraction
+            finaljson = clean_and_extract_json(js)
+            
+            if finaljson:
+                print("Successfully parsed JSON:")
+                print(json.dumps(finaljson, indent=4))
+            else:
+                print("Failed to extract valid JSON from response, using original tourist attractions")
+                finaljson = {}
+                
+            print('Original result data:')
             print(json.dumps(result,indent=4))
-            print('hello')
             # Debug prints to understand the data
             print("Keys in result['tourist_attraction']:", list(result['tourist_attraction'].keys()))
             print("Keys in finaljson:", list(finaljson.keys()))
@@ -304,11 +395,67 @@ class placesRetrieve:
         # Print the batches
         poly = []
         dist = []
-        for end_batch in batches:
+        
+        import asyncio
+        import random
+        
+        async def rate_limited_distance_matrix(client, start, end, max_retries=3):
+            """
+            Rate limited distance matrix call with exponential backoff
+            """
+            base_delay = 2  # Base delay in seconds
+            max_delay = 60  # Maximum delay in seconds
+            
+            for attempt in range(max_retries):
+                try:
+                    # Add random jitter to prevent thundering herd
+                    if attempt > 0:
+                        jitter = random.uniform(0.1, 0.5)
+                        delay = min(base_delay * (2 ** attempt) + jitter, max_delay)
+                        print(f"Rate limit hit, waiting {delay:.2f} seconds before retry {attempt + 1}...")
+                        await asyncio.sleep(delay)
+                    
+                    print(f"Attempting distance matrix call for batch: {end[:50]}...")
+                    distance_matrix = client.routing.distance_matrix(start, end)
+                    print(f"Successfully got distance matrix for batch")
+                    return distance_matrix
+                    
+                except Exception as e:
+                    if "429" in str(e) or "rate limit" in str(e).lower():
+                        print(f"Rate limit hit on attempt {attempt + 1}: {e}")
+                        if attempt == max_retries - 1:
+                            print(f"Max retries reached, skipping this batch")
+                            return None
+                        continue
+                    else:
+                        print(f"Non-rate-limit error: {e}")
+                        return None
+            
+            return None
+        
+        # Process batches with rate limiting
+        for i, end_batch in enumerate(batches):
             start = "26.9854865,75.8513454"
             end = end_batch
+            
+            print(f"Processing batch {i + 1}/{len(batches)}")
+            
+            # Add delay between batches to respect rate limits
+            if i > 0:
+                batch_delay = 1.5  # 1.5 seconds between batches
+                print(f"Waiting {batch_delay} seconds between batches...")
+                await asyncio.sleep(batch_delay)
 
-            distance_matrix = client.routing.distance_matrix(start, end)
+            distance_matrix = await rate_limited_distance_matrix(client, start, end)
+            
+            if distance_matrix is None:
+                print(f"Skipping batch {i + 1} due to persistent errors")
+                # Add default values for this batch
+                batch_size = len(end.split('|'))
+                for _ in range(batch_size):
+                    poly.append(None)
+                    dist.append(0)  # Default distance
+                continue
 
             for row in distance_matrix.get('rows', []):
                 for element in row.get('elements', []):
@@ -317,8 +464,13 @@ class placesRetrieve:
 
                     if polys is not None:
                         poly.append(polys)
+                    else:
+                        poly.append(None)
+                        
                     if distance is not None:
                         dist.append(distance)
+                    else:
+                        dist.append(0)  # Default distance if not available
 
         df_sorted['distance'] = dist
         df_sorted['path'] = poly

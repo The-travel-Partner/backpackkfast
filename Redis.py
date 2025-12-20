@@ -4,7 +4,7 @@ class RedisManager:
     
     """Safe Redis client manager with availability checks"""
     
-    def __init__(self, host="redis-18380.c330.asia-south1-1.gce.redns.redis-cloud.com", port=18380, decode_responses=True):
+    def __init__(self, host="redis-14494.c330.asia-south1-1.gce.cloud.redislabs.com", port=14494, decode_responses=True):
         self.host = host
         self.port = port
         self.decode_responses = decode_responses
@@ -20,7 +20,7 @@ class RedisManager:
                 port=self.port, 
                 decode_responses=self.decode_responses,
                 username="default",
-                password="sMV8lRTLeJ901K5EWEKbAXMhT09h5qtw",
+                password="UlAWjg62BmBM91qHyVDLWR74g96ErhcC",
                 socket_connect_timeout=5,
                 socket_timeout=5
             )

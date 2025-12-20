@@ -84,7 +84,7 @@ class placesRetrieve:
             if placefind is not None:
                 dbplace = placesDBClass(cityname=self.city_name, db=self.placesdb, placetypes=self.place_types)
                 findplace = await dbplace.getCity()
-                finalres = dbplace.update_json(findplace,fedresult)
+                finalres = await dbplace.update_json(findplace,fedresult)
                 timestamp = f"{str(time.localtime().tm_mon)},{str(time.localtime().tm_year)}"
                 places = {'city_name': self.city_name, "timestamp": timestamp, 'places': finalres}
                 filter_criteria = {"city_name": self.city_name}

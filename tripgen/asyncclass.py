@@ -123,7 +123,7 @@ class retrieveplace:
                 headers = {
                     "Content-Type": "application/json",
                     "X-Goog-Api-Key": "AIzaSyAt9_35pEEtevoHJCTeJwynPqjx-9-MVjk",
-                    "X-Goog-FieldMask": "places.id,places.location,places.rating,places.userRatingCount,places.types,places.photos,places.displayName,places.regularOpeningHours,places.reviews",
+                    "X-Goog-FieldMask": "places.id,places.location,places.rating,places.userRatingCount,places.types,places.photos,places.displayName,places.regularOpeningHours,places.reviews,places.priceRange",
                 }
                 
                 data = {
@@ -147,7 +147,7 @@ class retrieveplace:
                     images_collection = self.placesdb['images']
                     
                     # Process places in smaller batches to manage connections
-                    batch_size = 10
+                    batch_size = 7
                     for i in range(0, len(results), batch_size):
                         batch = results[i:i + batch_size]
                         tasks = [self.process_single_place(place, place_type, images_collection) for place in batch]
@@ -197,7 +197,7 @@ class retrieveplace:
                     images_collection = self.placesdb['images']
                     
                     # Process places in batches of 5
-                    batch_size = 5
+                    batch_size = 2
                     for i in range(0, len(results), batch_size):
                         batch = results[i:i + batch_size]
                         tasks = [self.process_single_place(place, place_type, images_collection) for place in batch]
@@ -409,6 +409,17 @@ class place(retrieveplace):
                 self.result["vegetarian_restaurant"] = res
            
         return self.result
+    async def get_all_places(self):
+        for place in self.types:
+            if place == 'tourist_attraction':
+                res = await self.touristattraction()
+                self.tourist = copy.deepcopy(res)
+                self.result[place] = res
+            else:
+                res = await super().other(self.session, place)
+                self.result[place] = copy.deepcopy(super().duplicateremover(res))
+            return self.result
+
 
 
 class RetrievePhotos:

@@ -1,0 +1,106 @@
+{
+  "travel_info": [
+    {
+      "id": 1,
+      "category": "destination",
+      "name": "Goa",
+      "country": "India",
+      "description": "Famous beach destination known for its Portuguese heritage, nightlife, and water sports",
+      "best_time_to_visit": "November to February",
+      "popular_activities": ["beach activities", "water sports", "nightlife", "heritage tours"]
+    },
+    {
+      "id": 2,
+      "category": "destination",
+      "name": "Jaipur",
+      "country": "India",
+      "description": "The Pink City, known for magnificent forts, palaces, and vibrant culture",
+      "best_time_to_visit": "October to March",
+      "popular_activities": ["fort visits", "palace tours", "shopping", "cultural experiences"]
+    },
+    {
+      "id": 3,
+      "category": "destination",
+      "name": "Kerala",
+      "country": "India",
+      "description": "God's Own Country, famous for backwaters, hill stations, and Ayurvedic treatments",
+      "best_time_to_visit": "September to March",
+      "popular_activities": ["houseboat cruises", "ayurveda", "wildlife", "beach activities"]
+    },
+    {
+      "id": 4,
+      "category": "hotel",
+      "name": "Taj Hotels",
+      "location": "Multiple locations across India",
+      "rating": 5,
+      "amenities": ["luxury accommodation", "fine dining", "spa", "concierge service"],
+      "price_range": "Premium"
+    },
+    {
+      "id": 5,
+      "category": "hotel",
+      "name": "Treebo Hotels",
+      "location": "Multiple locations across India",
+      "rating": 3,
+      "amenities": ["comfortable rooms", "wifi", "breakfast", "24/7 service"],
+      "price_range": "Budget"
+    },
+    {
+      "id": 6,
+      "category": "travel_tip",
+      "title": "Best Time to Visit India",
+      "content": "The best time to visit most parts of India is during the winter months (October to March) when the weather is pleasant. However, hill stations are best visited in summer.",
+      "tags": ["planning", "weather", "timing"]
+    },
+    {
+      "id": 7,
+      "category": "travel_tip",
+      "title": "Local Transportation",
+      "content": "India offers various transportation options including metro, auto-rickshaws, taxis, and app-based cabs like Uber and Ola. Always negotiate fares beforehand for auto-rickshaws.",
+      "tags": ["transportation", "local travel", "tips"]
+    },
+    {
+      "id": 8,
+      "category": "activity",
+      "name": "Scuba Diving",
+      "location": "Andaman Islands, Goa, Pondicherry",
+      "duration": "2-4 hours",
+      "difficulty": "Beginner to Advanced",
+      "description": "Explore underwater marine life and coral reefs"
+    },
+    {
+      "id": 9,
+      "category": "activity",
+      "name": "Trekking",
+      "location": "Himalayas, Western Ghats",
+      "duration": "1-15 days",
+      "difficulty": "Moderate to Challenging",
+      "description": "Experience mountain trails and scenic landscapes"
+    },
+    {
+      "id": 10,
+      "category": "cuisine",
+      "name": "Indian Street Food",
+      "popular_items": ["pani puri", "vada pav", "chaat", "dosa", "samosa"],
+      "regions": "Available across India with regional variations",
+      "price_range": "Very affordable",
+      "tip": "Always eat from clean, busy stalls for food safety"
+    },
+    {
+      "id": 11,
+      "category": "destination",
+      "name": "Agra",
+      "country": "India",
+      "description": "Home to the iconic Taj Mahal, one of the Seven Wonders of the World",
+      "best_time_to_visit": "October to March",
+      "popular_activities": ["Taj Mahal visit", "Agra Fort", "Fatehpur Sikri"]
+    },
+    {
+      "id": 12,
+      "category": "travel_tip",
+      "title": "Currency and Payments",
+      "content": "Indian Rupee (INR) is the official currency. Major cities accept credit cards, but carry cash for smaller towns. UPI payment apps are widely used.",
+      "tags": ["money", "payments", "currency"]
+    }
+  ]
+}
